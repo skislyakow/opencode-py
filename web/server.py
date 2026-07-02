@@ -43,10 +43,7 @@ class ProxyHandler(http.server.SimpleHTTPRequestHandler):
     def do_GET(self) -> None:
         if self._serve_static():
             return
-        if self.path in ("/event", "/global/event"):
-            self._proxy_sse("GET")
-        else:
-            self._proxy("GET")
+        self._proxy("GET")
 
     def do_POST(self) -> None:
         body = self.rfile.read(int(self.headers.get("Content-Length", 0)))
@@ -86,30 +83,6 @@ class ProxyHandler(http.server.SimpleHTTPRequestHandler):
         self.send_header("Content-Length", str(len(data)))
         self.end_headers()
         self.wfile.write(data)
-
-    def _proxy_sse(self, method: str) -> None:
-        target = f"http://127.0.0.1:{self.opencode_port}{self.path}"
-        req = urllib.request.Request(target, method=method)
-        try:
-            resp = urllib.request.urlopen(req)
-            self.send_response(resp.status)
-            self.send_header("Content-Type", "text/event-stream")
-            self.send_header("Cache-Control", "no-cache")
-            self.send_header("X-Accel-Buffering", "no")
-            self.end_headers()
-            while True:
-                chunk = resp.read(4096)
-                if not chunk:
-                    break
-                self.wfile.write(chunk)
-                self.wfile.flush()
-        except urllib.error.HTTPError as e:
-            self.send_response(e.code)
-            self.send_header("Content-Type", "application/json")
-            data = e.read()
-            self.send_header("Content-Length", str(len(data)))
-            self.end_headers()
-            self.wfile.write(data)
 
     def _proxy(self, method: str, body: Optional[bytes] = None) -> None:
         target = f"http://127.0.0.1:{self.opencode_port}{self.path}"
