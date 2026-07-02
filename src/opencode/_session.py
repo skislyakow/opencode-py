@@ -31,7 +31,7 @@ class Session:
         if references:
             prompt["references"] = references
 
-        delivery = "deferred" if wait else "immediate"
+        delivery = "queue" if wait else "steer"
         msg = self._client.v2_session_prompt(self.id, prompt, delivery=delivery)
 
         if wait:

@@ -130,7 +130,7 @@ class Opencode:
         if files:
             prompt_body["files"] = files
 
-        self.client.v2_session_prompt(session.id, prompt_body, delivery="immediate")
+        self.client.v2_session_prompt(session.id, prompt_body, delivery="steer")
 
         import httpx
 

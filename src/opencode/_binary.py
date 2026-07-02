@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import os
 import platform
+import re
 import shutil
 import stat
 import sys
@@ -33,15 +34,33 @@ def _platform_suffix() -> str:
     return f"{_system()}-{_arch()}"
 
 
+def _resolve_wrapper(path: str) -> str:
+    """If *path* is a .cmd/.bat wrapper (npm-style), return the real .exe it launches."""
+    if not path.lower().endswith((".cmd", ".bat")):
+        return path
+    try:
+        text = Path(path).read_text(encoding="utf-8", errors="replace")
+        for line in text.splitlines():
+            m = re.search(r'"([^"]+\.exe)"', line)
+            if m:
+                rel = m.group(1)
+                full = rel.replace("%dp0%", os.path.dirname(path)).replace("/", "\\")
+                if os.path.isfile(full):
+                    return os.path.realpath(full)
+    except Exception:
+        pass
+    return path
+
+
 def find_in_path(name: str = "opencode") -> Optional[str]:
     resolved = shutil.which(name)
     if resolved:
-        return resolved
+        return _resolve_wrapper(resolved)
     if sys.platform == "win32":
-        for ext in (".cmd", ".bat", ".exe"):
+        for ext in (".exe", ".cmd", ".bat"):
             resolved = shutil.which(name + ext)
             if resolved:
-                return resolved
+                return _resolve_wrapper(resolved)
     return None
 
 
@@ -52,7 +71,7 @@ def binary_dir() -> Path:
 def find_local(name: str = "opencode") -> Optional[str]:
     candidates = [name]
     if sys.platform == "win32":
-        candidates = [f"{name}.exe", f"{name}.cmd", name]
+        candidates = [f"{name}.exe", name]
     for candidate in candidates:
         full = binary_dir() / candidate
         if full.exists():
@@ -76,11 +95,11 @@ def download_opencode(
     version: str = "latest",
     dest: Optional[Path] = None,
 ) -> str:
-    import urllib.request
-    import json
     import io
-    import zipfile
+    import json
     import tarfile
+    import urllib.request
+    import zipfile
 
     dest = dest or binary_dir()
     dest.mkdir(parents=True, exist_ok=True)
