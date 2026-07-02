@@ -1,11 +1,29 @@
 from __future__ import annotations
 
+import warnings
 from typing import Any, Dict, Iterator, List, Optional
 
 from opencode._client import OpencodeClient
 from opencode._models import SessionMessage
 from opencode._server import OpencodeServer, create_opencode_server
 from opencode._session import Session
+
+_opencode_state: Dict[str, Any] = {}
+
+
+def _resolve_model(
+    model: Optional[str] = None,
+    config: Optional[Dict[str, Any]] = None,
+) -> Optional[Dict[str, str]]:
+    model_str = model
+    if not model_str and config:
+        model_str = config.get("model")
+    if not model_str:
+        return None
+    if "/" in model_str:
+        provider, model_id = model_str.split("/", 1)
+        return {"providerID": provider, "modelID": model_id}
+    return {"providerID": "opencode", "modelID": model_str}
 
 
 class Opencode:
@@ -99,15 +117,7 @@ class Opencode:
         return Session(self.client, sid)
 
     def _resolve_model(self) -> Optional[Dict[str, str]]:
-        model_str = self._model
-        if not model_str and self._config:
-            model_str = self._config.get("model")
-        if not model_str:
-            return None
-        if "/" in model_str:
-            provider, model_id = model_str.split("/", 1)
-            return {"providerID": provider, "modelID": model_id}
-        return {"providerID": "opencode", "modelID": model_str}
+        return _resolve_model(model=self._model, config=self._config)
 
     def ask(
         self,
@@ -174,13 +184,41 @@ def _extract_text(msg: SessionMessage) -> str:
 def opencode(
     prompt: str,
     *,
+    keep: bool = False,
     model: Optional[str] = None,
     port: int = 4096,
     directory: Optional[str] = None,
     config: Optional[Dict[str, Any]] = None,
 ) -> str:
-    cfg = dict(config or {})
-    if model:
-        cfg["model"] = model
-    with Opencode(port=port, directory=directory, config=cfg or None) as ai:
-        return ai.ask(prompt)
+    global _opencode_state
+    state = _opencode_state
+
+    if not state:
+        cfg = dict(config or {})
+        if model:
+            cfg["model"] = model
+        ai = Opencode(port=port, directory=directory, config=cfg or None)
+        ai.start()
+        session = ai.create_session()
+        state["ai"] = ai
+        state["session"] = session
+        state["config"] = cfg
+    else:
+        ai = state["ai"]
+        session = state["session"]
+        if model is not None or config is not None:
+            new_cfg = dict(config or {})
+            if model:
+                new_cfg["model"] = model
+            if new_cfg != state.get("config", {}):
+                warnings.warn("Ignoring new config/model — using existing session")
+
+    resolved = _resolve_model(config=state.get("config", {}))
+    msg = session.prompt(prompt, model=resolved)
+    result = _extract_text(msg)
+
+    if not keep:
+        ai.close()
+        state.clear()
+
+    return result
