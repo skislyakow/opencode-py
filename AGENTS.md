@@ -40,6 +40,9 @@ opencode-py/
 ├── demo.py                # Live demo (38 endpoint checks)
 ├── live.py                # Interactive multi-turn dialog script
 ├── test_live.py           # Live integration test
+├── web/
+│   ├── server.py          # Start opencode + proxy for web UI
+│   └── index.html         # Chat interface (vanilla JS)
 ├── AGENTS.md              # This file
 ├── README.md
 ├── pyproject.toml
@@ -51,6 +54,8 @@ opencode-py/
 ## Current State (commit history)
 
 ```
+ad54a39 feat(web): add zero-dependency web UI with proxy server
+b8d205f feat(sdk): add auto_tools mode with ToolExecutor and permissions
 2fd170c docs: update AGENTS.md with keep mode and live.py
 67ae119 feat(sdk): add keep parameter for multi-turn conversations
 514b0a2 fix(session): use V1 sync prompt with model support instead of V2
@@ -186,6 +191,9 @@ python demo.py
 
 # Interactive dialog
 python live.py
+
+# Web UI (zero deps, opens browser)
+python web/server.py
 ```
 
 ## Next Steps (priority order)
