@@ -137,12 +137,14 @@ class AsyncOpendcode:
         prompt: str,
         *,
         files: Optional[Dict[str, Any]] = None,
+        session: Optional[AsyncSession] = None,
     ) -> AsyncIterator[str]:
         import json
 
         import httpx
 
-        session = await self.create_session()
+        if session is None:
+            session = await self.create_session()
         # Use V1 synchronous prompt — events arrive via /event
         body: Dict[str, Any] = {"parts": [{"type": "text", "text": prompt}]}
         resolved = _resolve_model(model=self._model, config=self._config)

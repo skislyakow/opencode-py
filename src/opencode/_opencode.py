@@ -158,12 +158,14 @@ class Opencode:
         prompt: str,
         *,
         files: Optional[List[Dict[str, Any]]] = None,
+        session: Optional[Session] = None,
     ) -> Iterator[str]:
         import json
 
         import httpx
 
-        session = self.create_session()
+        if session is None:
+            session = self.create_session()
         # Use V1 synchronous prompt — the response events arrive via /event
         body: Dict[str, Any] = {"parts": [{"type": "text", "text": prompt}]}
         resolved = self._resolve_model()
