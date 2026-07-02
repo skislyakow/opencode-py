@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import warnings
 from typing import Any, Dict, Iterator, List, Optional
 
@@ -128,6 +129,7 @@ class Opencode:
         files: Optional[List[Dict[str, Any]]] = None,
         auto_tools: bool = False,
         agent: Optional[str] = None,
+        format: Optional[Dict[str, Any]] = None,
         wait: bool = True,
         poll_interval: float = 0.5,
         poll_timeout: float = 600.0,
@@ -140,6 +142,7 @@ class Opencode:
                 prompt,
                 files=files,
                 model=self._resolve_model(),
+                format=format,
                 tool_executor=ToolExecutor(),
             )
         else:
@@ -148,6 +151,7 @@ class Opencode:
                 files=files,
                 wait=wait,
                 model=self._resolve_model(),
+                format=format,
                 poll_interval=poll_interval,
                 poll_timeout=poll_timeout,
             )
@@ -221,6 +225,9 @@ class Opencode:
 
 def _extract_text(msg: SessionMessage) -> str:
     if isinstance(msg, dict) and msg.get("type") == "assistant":
+        structured = msg.get("structured")
+        if structured is not None:
+            return json.dumps(structured, ensure_ascii=False, default=str)
         parts = msg.get("content", [])
         texts: List[str] = []
         for part in parts:
@@ -239,6 +246,7 @@ def opencode(
     auto_tools: bool = False,
     agent: Optional[str] = None,
     model: Optional[str] = None,
+    format: Optional[Dict[str, Any]] = None,
     port: int = 4096,
     directory: Optional[str] = None,
     config: Optional[Dict[str, Any]] = None,
@@ -248,32 +256,31 @@ def opencode(
 
     if not state:
         cfg = dict(config or {})
-        if model:
-            cfg["model"] = model
         resolved_agent = agent or ("build" if auto_tools else None)
-        ai = Opencode(port=port, directory=directory, config=cfg or None)
+        ai = Opencode(port=port, directory=directory, config=cfg or None, model=model)
         ai.start()
         session = ai.create_session(agent=resolved_agent)
         state["ai"] = ai
         state["session"] = session
         state["config"] = cfg
+        state["model"] = model
     else:
         ai = state["ai"]
         session = state["session"]
         if model is not None or config is not None:
             new_cfg = dict(config or {})
-            if model:
-                new_cfg["model"] = model
-            if new_cfg != state.get("config", {}):
-                warnings.warn("Ignoring new config/model — using existing session")
+            if model is not None and model != state.get("model"):
+                warnings.warn("Ignoring new model — using existing session")
+            elif new_cfg != state.get("config", {}):
+                warnings.warn("Ignoring new config — using existing session")
 
-    resolved = _resolve_model(config=state.get("config", {}))
+    resolved = _resolve_model(model=state.get("model"), config=state.get("config", {}))
     if auto_tools:
         from opencode._tools import ToolExecutor
 
-        msg = session.ask(prompt, model=resolved, tool_executor=ToolExecutor())
+        msg = session.ask(prompt, model=resolved, format=format, tool_executor=ToolExecutor())
     else:
-        msg = session.prompt(prompt, model=resolved)
+        msg = session.prompt(prompt, model=resolved, format=format)
     result = _extract_text(msg)
 
     if not keep:

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import warnings
 from typing import Any, AsyncIterator, Dict, Optional
 
 from opencode._async_client import AsyncOpendcodeClient
@@ -7,6 +8,8 @@ from opencode._async_session import AsyncSession
 from opencode._models import SessionMessage
 from opencode._opencode import _extract_text, _resolve_model
 from opencode._server import OpencodeServer, create_opencode_server
+
+_async_opencode_state: Dict[str, Any] = {}
 
 
 class AsyncOpendcode:
@@ -106,6 +109,7 @@ class AsyncOpendcode:
         files: Optional[Dict[str, Any]] = None,
         auto_tools: bool = False,
         agent: Optional[str] = None,
+        format: Optional[Dict[str, Any]] = None,
         wait: bool = True,
         poll_interval: float = 0.5,
         poll_timeout: float = 600.0,
@@ -119,6 +123,7 @@ class AsyncOpendcode:
                 prompt,
                 files=files,
                 model=model,
+                format=format,
                 tool_executor=ToolExecutor(),
             )
         else:
@@ -127,6 +132,7 @@ class AsyncOpendcode:
                 files=files,
                 wait=wait,
                 model=model,
+                format=format,
                 poll_interval=poll_interval,
                 poll_timeout=poll_timeout,
             )
@@ -196,3 +202,54 @@ class AsyncOpendcode:
 
             elif event_type == "session.idle":
                 break
+
+
+async def async_opencode(
+    prompt: str,
+    *,
+    keep: bool = False,
+    auto_tools: bool = False,
+    agent: Optional[str] = None,
+    model: Optional[str] = None,
+    format: Optional[Dict[str, Any]] = None,
+    port: int = 4096,
+    directory: Optional[str] = None,
+    config: Optional[Dict[str, Any]] = None,
+) -> str:
+    global _async_opencode_state
+    state = _async_opencode_state
+
+    if not state:
+        cfg = dict(config or {})
+        resolved_agent = agent or ("build" if auto_tools else None)
+        ai = AsyncOpendcode(port=port, directory=directory, config=cfg or None, model=model)
+        ai.start()
+        session = await ai.create_session(agent=resolved_agent)
+        state["ai"] = ai
+        state["session"] = session
+        state["config"] = cfg
+        state["model"] = model
+    else:
+        ai = state["ai"]
+        session = state["session"]
+        if model is not None or config is not None:
+            new_cfg = dict(config or {})
+            if model is not None and model != state.get("model"):
+                warnings.warn("Ignoring new model — using existing session")
+            elif new_cfg != state.get("config", {}):
+                warnings.warn("Ignoring new config — using existing session")
+
+    resolved = _resolve_model(model=state.get("model"), config=state.get("config", {}))
+    if auto_tools:
+        from opencode._tools import ToolExecutor
+
+        msg = await session.ask(prompt, model=resolved, format=format, tool_executor=ToolExecutor())
+    else:
+        msg = await session.prompt(prompt, model=resolved, format=format)
+    result = _extract_text(msg)
+
+    if not keep:
+        await ai.close()
+        state.clear()
+
+    return result

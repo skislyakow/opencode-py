@@ -22,6 +22,7 @@ class Session:
         agents: Optional[List[Dict[str, Any]]] = None,
         references: Optional[List[Dict[str, Any]]] = None,
         model: Optional[Dict[str, str]] = None,
+        format: Optional[Dict[str, Any]] = None,
         wait: bool = True,
         poll_interval: float = 0.5,
         poll_timeout: float = 600.0,
@@ -30,6 +31,8 @@ class Session:
         body: Dict[str, Any] = {"parts": parts}
         if model:
             body["model"] = model
+        if format:
+            body["format"] = format
 
         # Use V1 sync prompt (POST /session/:id/message)
         result = self._client.session_send(self.id, body)
@@ -37,19 +40,23 @@ class Session:
         if isinstance(result, dict):
             parts_list = result.get("parts", [])
             info = result.get("info", {})
+            structured = result.get("structured") or info.get("structured")
             # Convert parts to V2-like SessionMessage format
             text_parts: List[Dict[str, Any]] = []
             for p in parts_list:
                 ptype = p.get("type", "")
                 if ptype in ("text", "reasoning", "tool"):
                     text_parts.append({"type": ptype, "text": p.get("text", "")})
-            return {
+            msg: Dict[str, Any] = {
                 "id": info.get("id", ""),
                 "type": "assistant",
                 "content": text_parts,
                 "model": info.get("model"),
                 "time": info.get("time", {}),
             }
+            if structured is not None:
+                msg["structured"] = structured
+            return msg
 
         return result
 
@@ -59,6 +66,7 @@ class Session:
         *,
         files: Optional[List[Dict[str, Any]]] = None,
         model: Optional[Dict[str, str]] = None,
+        format: Optional[Dict[str, Any]] = None,
         max_tool_rounds: int = 25,
         tool_executor: Optional[ToolExecutor] = None,
         quiet: bool = False,
@@ -73,6 +81,8 @@ class Session:
             body: Dict[str, Any] = {"parts": parts}
             if model:
                 body["model"] = model
+            if format:
+                body["format"] = format
 
             result = self._client.session_send(self.id, body)
             if not isinstance(result, dict):
@@ -114,13 +124,17 @@ class Session:
                 ptype = p.get("type", "")
                 if ptype in ("text", "reasoning", "tool"):
                     text_parts.append({"type": ptype, "text": p.get("text", "")})
-            return {
+            msg: Dict[str, Any] = {
                 "id": info.get("id", ""),
                 "type": "assistant",
                 "content": text_parts,
                 "model": info.get("model"),
                 "time": info.get("time", {}),
             }
+            structured = result.get("structured") or info.get("structured")
+            if structured is not None:
+                msg["structured"] = structured
+            return msg
 
         raise RuntimeError(f"Tool loop exceeded {max_tool_rounds} rounds")
 

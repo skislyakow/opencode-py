@@ -23,32 +23,41 @@ Python SDK for [Opencode](https://opencode.ai) — a PyPI package (`opencode-ai`
 ```
 opencode-py/
 ├── src/opencode/
-│   ├── __init__.py        # Public API exports
-│   ├── __main__.py        # python -m opencode "question"
-│   ├── _opencode.py       # Opencode class (ask/ask_stream/context manager)
-│   ├── _client.py         # OpencodeClient — all REST endpoints (528 lines)
-│   ├── _server.py         # OpencodeServer — subprocess lifecycle
-│   ├── _session.py        # Session — conversation management
-│   ├── _binary.py         # Binary find in PATH + GitHub download
-│   ├── _process.py        # Cross-platform process termination
-│   ├── _models.py         # TypedDict types for API responses
-│   ├── _tools.py          # ToolExecutor — run tools locally with permissions
-│   └── _errors.py         # OpencodeError, ApiError, BinaryNotFound
+│   ├── __init__.py            # Public API exports
+│   ├── __main__.py            # python -m opencode "question"
+│   ├── _opencode.py           # Opencode class + opencode() convenience fn
+│   ├── _async_opencode.py     # AsyncOpendcode class + async_opencode()
+│   ├── _client.py             # OpencodeClient — sync REST (528 lines)
+│   ├── _async_client.py       # AsyncOpendcodeClient — async REST
+│   ├── _server.py             # OpencodeServer — subprocess lifecycle
+│   ├── _session.py            # Session — sync conversation management
+│   ├── _async_session.py      # AsyncSession — async conversation management
+│   ├── _binary.py             # Binary find in PATH + GitHub download
+│   ├── _process.py            # Cross-platform process termination
+│   ├── _models.py             # TypedDict types (OutputFormatJsonSchema, etc.)
+│   ├── _tools.py              # ToolExecutor — run tools locally with permissions
+│   └── _errors.py             # OpencodeError, ApiError, BinaryNotFound
 ├── tests/
-│   ├── test_client.py     # 11 unit tests (httpx MockTransport)
-│   └── test_opencode.py   # 6 tests for opencode() keep/resolve_model
-├── demo.py                # Live demo (38 endpoint checks)
-├── live.py                # Interactive multi-turn dialog script
-├── test_live.py           # Live integration test
+│   ├── test_client.py         # 11 unit tests (sync, httpx MockTransport)
+│   ├── test_async_client.py   # 11 unit tests (async, httpx MockTransport)
+│   └── test_opencode.py       # 9 tests (resolve_model, keep, structured, format)
+├── scripts/
+│   └── check-upstream.py      # Compare openapi.json with upstream GitHub
+├── demo.py                    # Live demo (38 endpoint checks)
+├── live.py                    # Interactive multi-turn dialog (sync)
+├── live_async.py              # Interactive multi-turn dialog (async)
+├── live_streaming.py          # Streaming interactive dialog
+├── test_live.py               # Live integration test
 ├── web/
-│   ├── server.py          # Start opencode + proxy for web UI
-│   └── index.html         # Chat interface (vanilla JS)
-├── AGENTS.md              # This file
+│   ├── server.py              # Start opencode + proxy for web UI
+│   └── index.html             # Chat interface (vanilla JS)
+├── AGENTS.md                  # This file
 ├── README.md
+├── README.ru.md
 ├── pyproject.toml
 ├── .gitignore
 └── docs/
-    └── opencode-docs-ru.md # Russian docs from opencode.ai
+    └── opencode-docs-ru.md    # Russian docs from opencode.ai
 ```
 
 ## Current State (commit history)
@@ -68,28 +77,33 @@ fb4b884 feat: initial Python SDK for Opencode
 - Binary auto-detection: PATH -> `~/.opencode/bin/` -> GitHub download
 - Full REST API coverage (V1 + V2):
   - Global, config, sessions, files, VCS, find, MCP, auth, providers, models, LSP, formatter, tools, permissions, questions, PTY, worktree, workspace, sync, TUI
-- Session prompt via V2 API with context polling (replaced broken `v2_session_wait`)
+- Session prompt via V1 sync API (V2 `v2_session_wait` is broken, replaced with V1 `POST /session/:id/message`)
 - `Opencode(config={"model": "opencode/big-pickle"}).ask("...")` — works end-to-end with free model
 - `opencode(prompt, keep=True)` — multi-turn conversation in same session
 - `opencode(prompt, auto_tools=True)` — agentic tool execution (bash, write, edit, read, glob, grep) with permission system
+- `async_opencode(prompt, keep=True)` — async version of `opencode()`
+- Structured output — `format={"type": "json_schema", "schema": {...}}` on `ask()` / `prompt()` / `opencode()`
+- Async full support — `AsyncOpendcode`, `AsyncOpendcodeClient`, `AsyncSession`
+- Streaming — `ask_stream()` (sync + async) via `/event` SSE, works with `big-pickle` (non-streaming model) and streaming models
+- `scripts/check-upstream.py` — fetches upstream openapi.json, flags needed changes
 - 38/38 live endpoints tested against opencode v1.17.13
-- 17/17 unit tests passing
+- 31/31 unit tests passing (sync + async)
 - Python 3.10 compatibility (`NotRequired` via `typing_extensions`)
-- `live.py` — interactive dialog script with `atexit` cleanup
+- `live.py` (sync), `live_async.py`, `live_streaming.py` — interactive dialog scripts with `atexit` cleanup
 
 ### Known issues to fix
 
-1. **Delivery enum mismatch** — npm v1.17.13 uses `"steer"/"queue"`, but `dev` branch source uses `"immediate"/"deferred"`. Current code uses `"steer"/"queue"`. When opencode releases a new version, update `_client.py:delivery="queue"` and `_session.py` to use `"immediate"/"deferred"`.
+1. **Delivery enum mismatch** — npm v1.17.13 uses `"steer"/"queue"`, but upstream `dev` branch source also uses `"steer"/"queue"`. The local clone (`C:\Code\opencode`) has been modified to use `"immediate"/"deferred"` but this is NOT yet upstream. When upstream switches, update `_client.py:delivery="queue"` and `_async_client.py` to `"deferred"`. Run `scripts/check-upstream.py` to monitor.
 
-2. ~~**Config format** — `Opencode(config={"model": "anthropic/..."})` fails because config expects `provider.{id}.options.apiKey` format.~~ **PARTIALLY RESOLVED**: The free `opencode` provider models work without API keys, but `OPENCODE_CONFIG_CONTENT={"model": "opencode/big-pickle"}` crashes the server with "ServeError" in v1.17.13. The model should be specified in the V1 prompt request body instead of server config. `Opencode` class works by passing `model` per-request, not via server config.
+2. ~~**Config format** — `Opencode(config={"model": "anthropic/..."})` fails because config expects `provider.{id}.options.apiKey` format.~~ **PARTIALLY RESOLVED**: The free `opencode` provider models work without API keys, but `OPENCODE_CONFIG_CONTENT={"model": "opencode/big-pickle"}` crashes the server with "ServeError" in v1.17.13. The model should be specified in the V1 prompt request body instead of server config. `Opencode` class works by passing `model` per-request, not via server config. **FIXED**: `opencode(model=...)` no longer puts model in server config — passes it per-request.
 
 3. **`v2_session_wait` broken** — `POST /api/session/{sessionID}/wait` returns "Session wait is not available yet" in v1.17.13. **FIXED**: `Session.prompt()` now polls `v2_session_context()` until an assistant message appears (see `_session.py:_poll_response`).
 
-4. **No async support** — `OpencodeClient` is sync-only. `httpx.AsyncClient` not wired up.
+4. ~~**No async support** — `OpencodeClient` is sync-only. `httpx.AsyncClient` not wired up.~~ **DONE**: `AsyncOpendcodeClient`, `AsyncSession`, `AsyncOpendcode`, `async_opencode()` all implemented.
 
 5. **Streaming** — `ask_stream()` reads SSE events via `/event` but delta format may differ between server versions.
 
-6. **No upstream monitoring** — No script to compare local `openapi.json` with upstream.
+6. ~~**No upstream monitoring** — No script to compare local `openapi.json` with upstream.~~ **DONE**: `scripts/check-upstream.py` fetches upstream, checks delivery enum + structured output.
 
 ## Architecture
 
@@ -125,6 +139,15 @@ opencode(prompt)            # keep=False by default
 When `keep=True`, state is reused across calls (same session, same server).
 Warns if different config/model passed. Clean up with `atexit` in scripts.
 
+### async_opencode() — async convenience function
+Identical to `opencode()` but uses `AsyncOpendcode` and `await`.
+Module-level `_async_opencode_state` for server/session reuse.
+```python
+r1 = await async_opencode("hello", keep=True)
+r2 = await async_opencode("what's my name?", keep=True)
+r3 = await async_opencode("bye")
+```
+
 ### OpencodeClient (low-level)
 All HTTP methods follow the pattern:
 ```
@@ -159,6 +182,19 @@ ToolExecutor:
   - tools: bash, write, edit, read, glob, grep
 ```
 
+### Structured Output
+```
+prompt() / ask() / opencode() / async_opencode()
+  accept: format={"type": "json_schema", "schema": {...}, "retryCount": 2}
+  → body["format"] = format  (passed to V1 POST /session/:id/message)
+  → server injects StructuredOutput tool with toolChoice: "required"
+  → response may include "structured" field with parsed JSON
+  → _extract_text() returns JSON string when structured present
+
+Schema: opencode/big-pickle (DeepSeek) does NOT support tool_choice="required"
+        Need Claude/GPT-4 with API key.
+```
+
 ## Binary Management
 
 ```python
@@ -183,6 +219,9 @@ pip install -e ".[dev]"
 # Unit tests (no server needed)
 pytest tests/ -v
 
+# Check upstream openapi for changes
+python scripts/check-upstream.py
+
 # Live test (requires opencode in PATH or npm global install)
 python test_live.py
 
@@ -190,7 +229,9 @@ python test_live.py
 python demo.py
 
 # Interactive dialog
-python live.py
+python live.py          # sync
+python live_async.py    # async
+python live_streaming.py
 
 # Web UI (zero deps, opens browser)
 python web/server.py
@@ -211,19 +252,28 @@ python web/server.py
    - 6 unit tests for `keep` / `_resolve_model`
 
 ### Step C: Publish v0.1.0 to PyPI
-1. Create `scripts/check-upstream.py` — fetches openapi.json, diffs with local
+1. ~~Create `scripts/check-upstream.py` — fetches openapi.json, diffs with local~~ ✅ DONE
 2. Create GitHub Actions CI (tests on push)
 3. Publish to TestPyPI first, then PyPI
 
-### Step D: Async support
-1. `AsyncOpendcodeClient` using `httpx.AsyncClient`
-2. `AsyncSession` with `async prompt()`
-3. `AsyncOpendcode` with `async def ask()`
-4. `async with Opencode() as ai: answer = await ai.ask("...")`
+### Step D: Async support ✅ DONE
+1. `AsyncOpendcodeClient` using `httpx.AsyncClient` ✅
+2. `AsyncSession` with `async prompt()` ✅
+3. `AsyncOpendcode` with `async def ask()` ✅
+4. `async_opencode()` convenience function ✅
+5. 11 unit tests for async client ✅
 
 ### Step E: Streaming improvements
 1. Better SSE parsing in `ask_stream()`
 2. Handle `message.part.delta` and `message.updated` events
+
+### Step F: Structured output ✅ DONE
+1. `format` parameter on `prompt()` / `ask()` / `opencode()` / `async_opencode()` ✅
+2. `_extract_text()` handles `structured` field ✅
+3. 3 unit tests ✅
+
+### Step G: Upstream monitoring ✅ DONE
+1. `scripts/check-upstream.py` checks delivery enum + structured output ✅
 
 ## Style Guide
 

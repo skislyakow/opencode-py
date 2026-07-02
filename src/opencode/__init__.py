@@ -1,5 +1,5 @@
 from opencode._async_client import AsyncOpendcodeClient
-from opencode._async_opencode import AsyncOpendcode
+from opencode._async_opencode import AsyncOpendcode, async_opencode
 from opencode._async_session import AsyncSession
 from opencode._client import OpencodeClient
 from opencode._errors import ApiError, BinaryNotFound, OpencodeError, ServerStartupTimeout
@@ -28,6 +28,7 @@ __all__ = [
     "AsyncOpendcode",
     "AsyncOpendcodeClient",
     "AsyncSession",
+    "async_opencode",
     "BinaryNotFound",
     "Opencode",
     "OpendcodeClient",

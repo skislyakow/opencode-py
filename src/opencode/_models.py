@@ -60,6 +60,7 @@ class AssistantMessage(TypedDict):
     agent: NotRequired[str | None]
     model: NotRequired[Dict[str, str] | None]
     content: List[AssistantContent]
+    structured: NotRequired[Any]
     finish: NotRequired[str | None]
     cost: NotRequired[float | None]
     tokens: NotRequired[Dict[str, int] | None]
@@ -101,3 +102,9 @@ class PromptReferenceAttachment(TypedDict):
     target: NotRequired[str | None]
     targetUri: NotRequired[str | None]
     source: NotRequired[Dict[str, Any] | None]
+
+
+class OutputFormatJsonSchema(TypedDict):
+    type: Literal["json_schema"]
+    schema: Dict[str, Any]
+    retryCount: NotRequired[int | None]
