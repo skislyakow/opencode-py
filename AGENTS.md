@@ -1,302 +1,225 @@
 # Opencode Python SDK — AGENTS.md
 
-## Project
+## Project Overview
 
-Python SDK for [Opencode](https://opencode.ai) — a PyPI package (`opencode-ai`) that
-launches an `opencode serve` subprocess and provides both high-level and low-level APIs
-to interact with any Opencode HTTP API endpoint.
+Python SDK for [Opencode](https://opencode.ai) — a PyPI package (`opencode-ai`) that launches an `opencode serve` subprocess and provides both high-level and low-level APIs.
+
+**Current version**: 0.1.0 (unreleased)
+**Python**: >=3.10
+**Dependencies**: only `httpx>=0.27.0`
+**Build**: hatchling
 
 ## Repository
 
+- `C:\Code\opencode-py\` (local)
 - GitHub: https://github.com/[user]/opencode-py
-- Upstream: https://github.com/anomalyco/opencode
-- OpenAPI spec: https://raw.githubusercontent.com/anomalyco/opencode/dev/packages/sdk/openapi.json
+- Upstream opencode: https://github.com/anomalyco/opencode
+  - OpenAPI spec: `packages/sdk/openapi.json` (committed)
+  - Raw URL: `https://raw.githubusercontent.com/anomalyco/opencode/dev/packages/sdk/openapi.json`
+  - Local copy of this repo: `C:\Code\opencode\`
 
-## Key Decisions
+## File Structure
 
-### SDK architecture
+```
+opencode-py/
+├── src/opencode/
+│   ├── __init__.py        # Public API exports
+│   ├── __main__.py        # python -m opencode "question"
+│   ├── _opencode.py       # Opencode class (ask/ask_stream/context manager)
+│   ├── _client.py         # OpencodeClient — all REST endpoints (528 lines)
+│   ├── _server.py         # OpencodeServer — subprocess lifecycle
+│   ├── _session.py        # Session — conversation management
+│   ├── _binary.py         # Binary find in PATH + GitHub download
+│   ├── _process.py        # Cross-platform process termination
+│   ├── _models.py         # TypedDict types for API responses
+│   └── _errors.py         # OpencodeError, ApiError, BinaryNotFound
+├── tests/
+│   └── test_client.py     # 11 unit tests (httpx MockTransport)
+├── demo.py                # Live demo (38 endpoint checks)
+├── test_live.py           # Live integration test
+├── AGENTS.md              # This file
+├── README.md
+├── pyproject.toml
+└── .gitignore
+```
 
-- Package name: `opencode-ai`
-- Build system: `hatchling`
-- Min Python: 3.10
-- Only hard dependency: `httpx>=0.27.0`
-- Pydantic models NOT required for MVP — use TypedDict from `typing`
-- Two API versions supported:
-  - **V1** — session create/delete/list, file, VCS, config, MCP, LSP, etc.
-  - **V2** — session prompt, wait, context, messages, models, providers
+## Current State (commit history)
 
-### High-level API (import from `opencode`)
+```
+4323247 fix: resolve npm .cmd wrappers to real .exe binary on Windows
+fb4b884 feat: initial Python SDK for Opencode
+```
+
+### What works
+- Server starts/stops via subprocess (`opencode serve`)
+- Binary auto-detection: PATH -> `~/.opencode/bin/` -> GitHub download
+- Full REST API coverage (V1 + V2):
+  - Global, config, sessions, files, VCS, find, MCP, auth, providers, models, LSP, formatter, tools, permissions, questions, PTY, worktree, workspace, sync, TUI
+- Session prompt via V2 API with wait/context/messages
+- 38/38 live endpoints tested against opencode v1.17.13
+- 11/11 unit tests passing
+
+### Known issues to fix
+
+1. **Delivery enum mismatch** — npm v1.17.13 uses `"steer"/"queue"`, but `dev` branch source uses `"immediate"/"deferred"`. Current code uses `"steer"/"queue"`. When opencode releases a new version, update `_client.py:delivery="queue"` and `_session.py`, `_opencode.py` to use `"immediate"/"deferred"`.
+
+2. **Config format** — `Opencode(config={"model": "anthropic/..."})` fails because config expects `provider.{id}.options.apiKey` format. Need to figure out correct config schema for free-tier models (Big Pickle). The user noticed free models require no API key. Check:
+   - How to set model selection without API key
+   - What `~/.config/opencode/opencode.json` looks like (may not exist)
+   - The `/api/provider` and `/api/model` endpoints for available free models
+
+3. **No async support** — `OpencodeClient` is sync-only. `httpx.AsyncClient` not wired up.
+
+4. **Streaming** — `ask_stream()` reads SSE events via `/event` but delta format may differ between server versions.
+
+5. **No upstream monitoring** — No script to compare local `openapi.json` with upstream.
+
+## Architecture
+
+### Opencode (high-level, context manager)
+```
+Opencode.__enter__()
+  → OpencodeServer.start()          # subprocess: opencode serve --port=N
+  → OpencodeClient(base_url, ...)   # httpx client
+  → return self
+Opencode.ask(prompt)
+  → create_session()
+  → Session.prompt(text)
+    → v2_session_prompt(delivery="queue")  # send prompt
+    → v2_session_wait()                     # poll until idle
+    → v2_session_context()                  # get messages
+  → _extract_text(message)                  # extract text content
+Opencode.__exit__()
+  → OpencodeClient.close()
+  → OpencodeServer.close()          # taskkill /T /F (win32) or SIGTERM (unix)
+```
+
+### OpencodeClient (low-level)
+All HTTP methods follow the pattern:
+```
+_request("GET"|"POST"|"DELETE"|"PATCH", path, params, json_body)
+```
+with automatic `directory`/`workspace` query param injection via `_merge_params()`.
+
+### Correct API paths (OpenAPI spec)
+V2 session operations:
+```
+POST /api/session/{sessionID}/prompt    — send prompt
+POST /api/session/{sessionID}/wait      — wait for idle (204)
+GET  /api/session/{sessionID}/context   — get context messages
+GET  /api/session/{sessionID}/message   — list messages (paginated)
+POST /api/session/{sessionID}/compact   — compact
+GET  /api/session                       — list sessions
+```
+
+All other endpoints use V1 paths (see AGENTS.md of the upstream repo or inline comments in `_client.py`).
+
+## Binary Management
 
 ```python
-from opencode import Opencode, opencode
-
-with Opencode() as ai:
-    answer = ai.ask("What is the capital of France?")
-
-async with Opencode() as ai:
-    answer = await ai.ask("Explain async")
-
-result = opencode("Quick one-shot question")
+# Resolution order:
+1. find_in_path() — shutil.which("opencode")
+   - On Windows: resolves .cmd wrappers to actual .exe via _resolve_wrapper()
+2. find_local()  — ~/.opencode/bin/opencode
+3. download_opencode() — GitHub releases
 ```
 
-### Low-level API
+**Key Windows fix**: `shutil.which("opencode")` returns `opencode.cmd` (npm wrapper). `_resolve_wrapper()` reads the .cmd file and extracts the `.exe` path from the line `"%dp0%\node_modules\opencode-ai\bin\opencode.exe"`.
 
-```python
-with Opencode() as ai:
-    session = ai.create_session()
-    msg = session.prompt("Hello")
-    session.prompt("Second question")
-    for m in session.messages():
-        print(m)
+Platform detection for download:
+- `win32-x64`, `win32-arm64`, `darwin-x64`, `darwin-arm64`, `linux-x64`, `linux-arm64`
 
-    ai.client.file_read("src/main.py")
-    ai.client.vcs_diff("HEAD~3")
-```
+## Testing
 
-### Binary management
+```bash
+# Install
+pip install -e ".[dev]"
 
-- First try `opencode` in PATH
-- If not found, download from GitHub releases:
-  `https://github.com/anomalyco/opencode/releases`
-- Platform detection: `{os}-{arch}` → win32-x64, darwin-x64, darwin-arm64, linux-x64, linux-arm64
-- Store in `~/.opencode/bin/`
-- Config passed via `OPENCODE_CONFIG_CONTENT` env var
+# Unit tests (no server needed)
+pytest tests/ -v
 
-### Communication
+# Live test (requires opencode in PATH or npm global install)
+python test_live.py
 
-- HTTP REST to `http://127.0.0.1:{port}`
-- Server started via `opencode serve --hostname=... --port=...`
-- Wait for stdout line containing `"opencode server listening on"`
-- Stop via `taskkill /T /F` (win32) or `SIGTERM` (others)
-
-## Correct API Paths (from OpenAPI spec)
-
-### V2 (session operations)
-```
-POST   /api/session/{sessionID}/prompt    — send prompt
-POST   /api/session/{sessionID}/wait      — wait for idle (204)
-GET    /api/session/{sessionID}/context   — get context messages
-GET    /api/session/{sessionID}/message   — list messages (paginated)
-POST   /api/session/{sessionID}/compact   — compact session
-GET    /api/session                      — list sessions (paginated)
-GET    /api/model                        — list models
-GET    /api/provider                     — list providers
-GET    /api/provider/{providerID}        — get provider
+# Demo
+python demo.py
 ```
 
-### V1 (session lifecycle + everything else)
-```
-POST   /session                          — create session
-GET    /session                          — list sessions
-GET    /session/{sessionID}              — get session
-DELETE /session/{sessionID}              — delete session
-PATCH  /session/{sessionID}              — update session
-POST   /session/{sessionID}/message      — send V1 prompt
-POST   /session/{sessionID}/fork         — fork session
-POST   /session/{sessionID}/abort        — abort session
-POST   /session/{sessionID}/share        — share session
-DELETE /session/{sessionID}/share        — unshare
-POST   /session/{sessionID}/init         — init session
-POST   /session/{sessionID}/summarize     — summarize
-GET    /session/{sessionID}/children     — child sessions
-GET    /session/{sessionID}/todo         — todos
-GET    /session/{sessionID}/diff         — file diff
-GET    /session/{sessionID}/message      — list messages
-GET    /session/{sessionID}/message/{messageID} — get message
-DELETE /session/{sessionID}/message/{messageID} — delete message
-POST   /session/{sessionID}/prompt_async  — async prompt
-POST   /session/{sessionID}/command       — send command
-POST   /session/{sessionID}/shell         — run shell
-POST   /session/{sessionID}/revert        — revert
-POST   /session/{sessionID}/unrevert      — restore reverted
-```
+## Next Steps (priority order)
 
-### File
-```
-GET /file/content?path=...     — read file content
-GET /file?path=...             — list directory
-GET /file/status?path=...      — file status
-```
+### Step B: Test `ask()` with free model (Big Pickle)
+1. Figure out correct config for free model usage
+   - Check `/api/provider` on running server for "big-pickle" or free providers
+   - Check if Big Pickle works without any API key/config
+2. Test `Session.prompt()` with delivery="queue" + `v2_session_wait()`
+3. Test `Opencode().ask()` end-to-end
+4. Fix any response parsing issues
 
-### Find
-```
-GET /find?pattern=...&include=...  — find text
-GET /find/file?query=...           — find files
-GET /find/symbol?query=...         — find symbols
-```
+### Step C: Publish v0.1.0 to PyPI
+1. Create `scripts/check-upstream.py` — fetches openapi.json, diffs with local
+2. Create GitHub Actions CI (tests on push)
+3. Publish to TestPyPI first, then PyPI
 
-### VCS
-```
-GET /vcs                         — VCS info
-GET /vcs/status?mode=git         — status
-GET /vcs/diff?mode=git&base=...  — diff
-POST /vcs/apply?mode=git         — apply patch
-```
+### Step D: Async support
+1. `AsyncOpendcodeClient` using `httpx.AsyncClient`
+2. `AsyncSession` with `async prompt()`
+3. `AsyncOpendcode` with `async def ask()`
+4. `async with Opencode() as ai: answer = await ai.ask("...")`
 
-### Config
-```
-GET  /config
-PATCH /config   { config: {...} }
-GET  /config/providers
-GET  /global/config
-PATCH /global/config
-```
-
-### Global
-```
-GET   /global/health
-GET   /global/event     (SSE)
-POST  /global/dispose
-POST  /global/upgrade    { target?: string }
-```
-
-### Auth
-```
-PUT    /auth/{providerID}    { auth: ... }
-DELETE /auth/{providerID}
-```
-
-### App
-```
-POST /log     { level, message, ... }
-GET  /agent   list agents
-```
-
-### MCP
-```
-GET    /mcp
-PUT    /mcp         { config: ... }
-POST   /mcp/{name}/connect
-DELETE /mcp/{name}/connect
-GET    /mcp/status
-```
-
-### Provider
-```
-GET /provider
-GET /provider/{providerID}/auth
-```
-
-### Tool
-```
-GET /experimental/tool
-GET /experimental/tool/ids
-```
-
-### Permission
-```
-GET  /permission
-POST /permission/{permissionID}  { ... }
-```
-
-### Question
-```
-GET    /question
-POST   /question/{questionID}   { answer: ... }
-DELETE /question/{questionID}
-```
-
-### LSP / Formatter
-```
-GET /lsp
-GET /formatter
-```
-
-### PTY
-```
-GET    /pty
-POST   /pty
-GET    /pty/{ptyID}
-DELETE /pty/{ptyID}
-PATCH  /pty/{ptyID}
-GET    /pty/shells
-```
-
-### Path
-```
-GET /path
-```
-
-### Instance
-```
-POST /instance/dispose
-```
-
-### Command
-```
-GET /command
-```
-
-### Project
-```
-GET    /project
-GET    /project/current
-PATCH  /project
-POST   /project/init-git
-```
-
-### Worktree (experimental)
-```
-GET    /experimental/worktree
-POST   /experimental/worktree
-DELETE /experimental/worktree
-POST   /experimental/worktree/reset
-```
-
-### Workspace (experimental)
-```
-GET    /experimental/workspace
-POST   /experimental/workspace
-GET    /experimental/workspace/status
-DELETE /experimental/workspace/{workspaceID}
-POST   /experimental/workspace/warp
-```
-
-### Sync (experimental)
-```
-POST /experimental/sync/start
-POST /experimental/sync/steal
-POST /experimental/sync/replay/{sessionID}
-GET  /experimental/sync/history/{sessionID}
-```
-
-### TUI
-```
-POST /tui/submit
-POST /tui/append
-POST /tui/clear
-POST /tui/command
-POST /tui/toast
-POST /tui/session
-POST /tui/sessions
-POST /tui/models
-POST /tui/themes
-POST /tui/help
-POST /tui/publish
-POST /tui/control/response
-POST /tui/control/next/{sessionID}
-```
+### Step E: Streaming improvements
+1. Better SSE parsing in `ask_stream()`
+2. Handle `message.part.delta` and `message.updated` events
 
 ## Style Guide
 
-- Keep everything in one function unless composable or reusable
-- Do not extract single-use helpers preemptively
+- Keep in one function unless composable/reusable
+- No single-use helpers preemptively
 - Avoid try/except where possible
-- Prefer httpx over urllib/requests
-- Method naming: snake_case, matching API category prefixes when appropriate
-- Type hints everywhere (Python 3.10+)
-- Avoid `Any` where possible
-
-## Upstream Monitoring
-
-- Weekly check: compare local `openapi.json` with upstream
-- If paths or models changed, update `_client.py` accordingly
-- Version bumps: if API breaks → major, adds → minor
+- Prefer httpx over urllib/requests (HTTP client), except for `_binary.py` which uses `urllib.request` for download (stdlib, no extra deps)
+- Method naming: snake_case, category prefix (e.g., `v2_session_*`, `file_*`, `config_*`)
+- Type hints everywhere
+- Avoid `Any` where possible — use `TypedDict` from `_models.py`
 
 ## Commit Convention
 
-Same as upstream: `type(scope): summary`
+```
+type(scope): summary
+```
 
-Valid types: feat, fix, docs, chore, refactor, test
+Types: feat, fix, docs, chore, refactor, test
+Always include package scope.
 
-Package scope: always include in commit messages.
+Examples:
+```
+feat(server): add async context manager support
+fix(binary): resolve npm .cmd wrappers to real .exe on Windows
+refactor(client): extract error handling to _handle()
+```
+
+## Quick Reference for New Agent
+
+```
+# Setup
+git clone <repo>  # or cd C:\Code\opencode-py
+pip install -e ".[dev]"
+
+# Check opencode availability
+opencode serve --help           # should work
+python -c "from opencode._binary import ensure_opencode; print(ensure_opencode())"
+
+# Run live test
+python test_live.py
+
+# Run demo
+python demo.py
+
+# Try a simple interactive test
+python -c "
+from opencode import OpencodeClient, create_opencode_server
+s = create_opencode_server(port=4097)
+c = OpencodeClient(base_url=s.url)
+print('Health:', c.health())
+c.close()
+s.close()
+"
+```
