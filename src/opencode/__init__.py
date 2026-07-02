@@ -17,7 +17,11 @@ from opencode._server import OpencodeServer, create_opencode_server
 from opencode._session import Session
 from opencode._tools import ToolExecutor
 
-__version__ = "0.1.0"
+try:
+    from importlib.metadata import version as _version
+    __version__ = _version("opencode-py")
+except:  # noqa: E722
+    __version__ = "0.0.0"
 
 __all__ = [
     "ApiError",
