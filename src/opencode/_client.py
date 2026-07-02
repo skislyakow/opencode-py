@@ -201,6 +201,9 @@ class OpencodeClient:
     def v2_session_list(self, **kwargs) -> Any:
         return self._request("GET", "/api/session", params=kwargs)
 
+    def session_send(self, session_id: str, body: Any) -> Any:
+        return self._request("POST", f"/session/{session_id}/message", json_body=body)
+
     def v2_session_prompt(self, session_id: str, prompt: Any, *, delivery: str = "queue", **kwargs) -> Any:
         body: Dict[str, Any] = {"prompt": prompt, "delivery": delivery, **kwargs}
         return self._request("POST", f"/api/session/{session_id}/prompt", json_body=body)

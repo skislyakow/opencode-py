@@ -19,38 +19,37 @@ class Session:
         files: Optional[List[Dict[str, Any]]] = None,
         agents: Optional[List[Dict[str, Any]]] = None,
         references: Optional[List[Dict[str, Any]]] = None,
+        model: Optional[Dict[str, str]] = None,
         wait: bool = True,
         poll_interval: float = 0.5,
         poll_timeout: float = 600.0,
     ) -> SessionMessage:
-        prompt: Dict[str, Any] = {"text": text}
-        if files:
-            prompt["files"] = files
-        if agents:
-            prompt["agents"] = agents
-        if references:
-            prompt["references"] = references
+        parts: List[Dict[str, Any]] = [{"type": "text", "text": text}]
+        body: Dict[str, Any] = {"parts": parts}
+        if model:
+            body["model"] = model
 
-        delivery = "queue" if wait else "steer"
-        msg = self._client.v2_session_prompt(self.id, prompt, delivery=delivery)
+        # Use V1 sync prompt (POST /session/:id/message)
+        result = self._client.session_send(self.id, body)
 
-        if wait:
-            self._wait_until_idle(poll_interval, poll_timeout)
-            messages = self._client.v2_session_context(self.id)
-            if messages:
-                return messages[-1]
+        if isinstance(result, dict):
+            parts_list = result.get("parts", [])
+            info = result.get("info", {})
+            # Convert parts to V2-like SessionMessage format
+            text_parts: List[Dict[str, Any]] = []
+            for p in parts_list:
+                ptype = p.get("type", "")
+                if ptype in ("text", "reasoning", "tool"):
+                    text_parts.append({"type": ptype, "text": p.get("text", "")})
+            return {
+                "id": info.get("id", ""),
+                "type": "assistant",
+                "content": text_parts,
+                "model": info.get("model"),
+                "time": info.get("time", {}),
+            }
 
-        return msg
-
-    def _wait_until_idle(self, interval: float = 0.5, timeout: float = 600.0) -> None:
-        start = time.monotonic()
-        while time.monotonic() - start < timeout:
-            try:
-                self._client.v2_session_wait(self.id)
-                return
-            except Exception:
-                time.sleep(interval)
-        raise TimeoutError(f"Session {self.id} did not become idle within {timeout}s")
+        return result
 
     def messages(self, **kwargs) -> Any:
         return self._client.v2_session_messages(self.id, **kwargs)

@@ -1,6 +1,11 @@
 from __future__ import annotations
 
-from typing import Any, Dict, List, Literal, NotRequired, TypedDict
+try:
+    from typing import NotRequired
+except ImportError:
+    from typing_extensions import NotRequired  # Python <3.11
+
+from typing import Any, Dict, List, Literal, TypedDict
 
 
 class SessionInfo(TypedDict):

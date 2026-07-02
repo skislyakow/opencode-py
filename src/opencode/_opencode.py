@@ -98,6 +98,17 @@ class Opencode:
         sid = raw["id"]
         return Session(self.client, sid)
 
+    def _resolve_model(self) -> Optional[Dict[str, str]]:
+        model_str = self._model
+        if not model_str and self._config:
+            model_str = self._config.get("model")
+        if not model_str:
+            return None
+        if "/" in model_str:
+            provider, model_id = model_str.split("/", 1)
+            return {"providerID": provider, "modelID": model_id}
+        return {"providerID": "opencode", "modelID": model_str}
+
     def ask(
         self,
         prompt: str,
@@ -112,6 +123,7 @@ class Opencode:
             prompt,
             files=files,
             wait=wait,
+            model=self._resolve_model(),
             poll_interval=poll_interval,
             poll_timeout=poll_timeout,
         )
