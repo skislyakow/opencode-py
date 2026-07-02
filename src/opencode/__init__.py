@@ -1,3 +1,6 @@
+from opencode._async_client import AsyncOpendcodeClient
+from opencode._async_opencode import AsyncOpendcode
+from opencode._async_session import AsyncSession
 from opencode._client import OpencodeClient
 from opencode._errors import ApiError, BinaryNotFound, OpencodeError, ServerStartupTimeout
 from opencode._models import (
@@ -22,11 +25,14 @@ __all__ = [
     "AssistantMessageReasoning",
     "AssistantMessageText",
     "AssistantMessageTool",
+    "AsyncOpendcode",
+    "AsyncOpendcodeClient",
+    "AsyncSession",
     "BinaryNotFound",
     "Opencode",
     "OpendcodeClient",
     "OpendcodeError",
-    "OpendcodeServer",
+    "OpencodeServer",
     "ServerStartupTimeout",
     "Session",
     "ToolExecutor",

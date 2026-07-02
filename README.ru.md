@@ -1,14 +1,14 @@
 # Opencode Python SDK
 
-Python SDK for [Opencode](https://opencode.ai) — the open source AI coding agent.
+Python SDK для [Opencode](https://opencode.ai) — open source AI coding agent.
 
 ```bash
 pip install opencode-ai
 ```
 
-## Quick start
+## Быстрый старт
 
-### One-shot (spawns server, asks, cleans up)
+### One-shot (запускает сервер, спрашивает, закрывает)
 
 ```python
 from opencode import opencode
@@ -17,7 +17,7 @@ answer = opencode("What is the capital of France?")
 print(answer)
 ```
 
-### Context manager (recommended)
+### Context manager (рекомендуется)
 
 ```python
 from opencode import Opencode
@@ -35,7 +35,7 @@ with Opencode() as ai:
         print(chunk, end="")
 ```
 
-### Conversations
+### Диалоги
 
 ```python
 with Opencode() as ai:
@@ -51,23 +51,23 @@ with Opencode() as ai:
 ```python
 from opencode import opencode
 
-# keep=True — server and session stay alive between calls
-r1 = opencode("My name is Alice", keep=True)
-r2 = opencode("What's my name?", keep=True)   # remembers the conversation
-r3 = opencode("That's all", keep=False)        # keep=False closes the server
+# keep=True — сервер и сессия живут между вызовами
+r1 = opencode("Меня зовут Вася", keep=True)
+r2 = opencode("Какое имя я назвал?", keep=True)  # помнит диалог
+r3 = opencode("Хватит", keep=False)  # keep=False закрывает сервер
 ```
 
-### Auto-tools (agentic tool execution)
+### Auto-tools (агент с инструментами)
 
 ```python
-r = opencode("Create a file called hello.txt", auto_tools=True)
+r = opencode("Создай файл hello.txt", auto_tools=True)
 ```
 
-Available tools: `bash`, `write`, `edit`, `read`, `glob`, `grep`.
+Инструменты: `bash`, `write`, `edit`, `read`, `glob`, `grep`.
 
-By default, `bash` asks for permission in the console, all others run without prompting.
+По умолчанию `bash` спрашивает разрешение в консоли, остальные выполняются без вопроса.
 
-Custom permissions via `Session.ask()`:
+Кастомные пермишены через `Session.ask()`:
 
 ```python
 from opencode import Opencode, ToolExecutor
@@ -75,12 +75,12 @@ from opencode import Opencode, ToolExecutor
 with Opencode() as ai:
     session = ai.create_session()
     msg = session.ask(
-        "Write test.py with print('hello')",
+        "Напиши test.py с кодом print('hello')",
         tool_executor=ToolExecutor(permissions={"write": "allow"}),
     )
 ```
 
-### Low-level API (any endpoint)
+### Низкоуровневый API (любой endpoint)
 
 ```python
 with Opencode() as ai:
@@ -91,24 +91,24 @@ with Opencode() as ai:
     ai.client.v2_session_prompt(session["id"], {"text": "Hello"})
 ```
 
-### Web UI (zero dependencies)
+### Web UI (без зависимостей)
 
 ```bash
 python web/server.py
-# → open http://127.0.0.1:3000
+# → открыть http://127.0.0.1:3000
 ```
 
-Built-in HTTP server + proxy to `opencode serve` — no extra dependencies.
+Встроенный HTTP-сервер + прокси к `opencode serve` — никаких зависимостей кроме Python.
 
-### Interactive dialog
+### Интерактивный диалог
 
 ```bash
 python live.py
 ```
 
-Multi-turn dialog with `keep=True`, server cleaned up on exit via `atexit`.
+Многострочный диалог с `keep=True`, сервер чистится при выходе (`atexit`).
 
-### Configuration
+### Конфигурация
 
 ```python
 with Opencode(
@@ -141,7 +141,7 @@ async with AsyncOpendcode() as ai:
         print(chunk, end="")
 ```
 
-### Async conversations
+### Async диалоги
 
 ```python
 async with AsyncOpendcode() as ai:
@@ -150,7 +150,7 @@ async with AsyncOpendcode() as ai:
     msg2 = await session.prompt("Now write a tagline for it")
 ```
 
-### Async low-level client
+### Async низкоуровневый клиент
 
 ```python
 from opencode import AsyncOpendcodeClient
@@ -160,15 +160,15 @@ async with AsyncOpendcodeClient() as client:
     print(health)
 ```
 
-## Development
+## Разработка
 
 ```bash
-# Install in editable mode
+# Установка в editable mode
 pip install -e ".[dev]"
 
-# Run tests
+# Запуск тестов
 pytest
 
-# Build
+# Сборка
 python -m build --wheel
 ```
