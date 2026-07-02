@@ -111,7 +111,9 @@ class Opencode:
     # High-level API
     # ------------------------------------------------------------------
 
-    def create_session(self, **kwargs) -> Session:
+    def create_session(self, agent: Optional[str] = None, **kwargs) -> Session:
+        if agent:
+            kwargs["agent"] = agent
         raw = self.client.session_create(**kwargs)
         sid = raw["id"]
         return Session(self.client, sid)
@@ -124,19 +126,31 @@ class Opencode:
         prompt: str,
         *,
         files: Optional[List[Dict[str, Any]]] = None,
+        auto_tools: bool = False,
+        agent: Optional[str] = None,
         wait: bool = True,
         poll_interval: float = 0.5,
         poll_timeout: float = 600.0,
     ) -> str:
-        session = self.create_session()
-        msg = session.prompt(
-            prompt,
-            files=files,
-            wait=wait,
-            model=self._resolve_model(),
-            poll_interval=poll_interval,
-            poll_timeout=poll_timeout,
-        )
+        session = self.create_session(agent=agent)
+        if auto_tools:
+            from opencode._tools import ToolExecutor
+
+            msg = session.ask(
+                prompt,
+                files=files,
+                model=self._resolve_model(),
+                tool_executor=ToolExecutor(),
+            )
+        else:
+            msg = session.prompt(
+                prompt,
+                files=files,
+                wait=wait,
+                model=self._resolve_model(),
+                poll_interval=poll_interval,
+                poll_timeout=poll_timeout,
+            )
         return _extract_text(msg)
 
     def ask_stream(
@@ -185,6 +199,8 @@ def opencode(
     prompt: str,
     *,
     keep: bool = False,
+    auto_tools: bool = False,
+    agent: Optional[str] = None,
     model: Optional[str] = None,
     port: int = 4096,
     directory: Optional[str] = None,
@@ -197,9 +213,10 @@ def opencode(
         cfg = dict(config or {})
         if model:
             cfg["model"] = model
+        resolved_agent = agent or ("build" if auto_tools else None)
         ai = Opencode(port=port, directory=directory, config=cfg or None)
         ai.start()
-        session = ai.create_session()
+        session = ai.create_session(agent=resolved_agent)
         state["ai"] = ai
         state["session"] = session
         state["config"] = cfg
@@ -214,7 +231,12 @@ def opencode(
                 warnings.warn("Ignoring new config/model — using existing session")
 
     resolved = _resolve_model(config=state.get("config", {}))
-    msg = session.prompt(prompt, model=resolved)
+    if auto_tools:
+        from opencode._tools import ToolExecutor
+
+        msg = session.ask(prompt, model=resolved, tool_executor=ToolExecutor())
+    else:
+        msg = session.prompt(prompt, model=resolved)
     result = _extract_text(msg)
 
     if not keep:

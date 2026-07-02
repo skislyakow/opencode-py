@@ -32,6 +32,7 @@ opencode-py/
 │   ├── _binary.py         # Binary find in PATH + GitHub download
 │   ├── _process.py        # Cross-platform process termination
 │   ├── _models.py         # TypedDict types for API responses
+│   ├── _tools.py          # ToolExecutor — run tools locally with permissions
 │   └── _errors.py         # OpencodeError, ApiError, BinaryNotFound
 ├── tests/
 │   ├── test_client.py     # 11 unit tests (httpx MockTransport)
@@ -50,6 +51,7 @@ opencode-py/
 ## Current State (commit history)
 
 ```
+2fd170c docs: update AGENTS.md with keep mode and live.py
 67ae119 feat(sdk): add keep parameter for multi-turn conversations
 514b0a2 fix(session): use V1 sync prompt with model support instead of V2
 4323247 fix: resolve npm .cmd wrappers to real .exe binary on Windows
@@ -64,6 +66,7 @@ fb4b884 feat: initial Python SDK for Opencode
 - Session prompt via V2 API with context polling (replaced broken `v2_session_wait`)
 - `Opencode(config={"model": "opencode/big-pickle"}).ask("...")` — works end-to-end with free model
 - `opencode(prompt, keep=True)` — multi-turn conversation in same session
+- `opencode(prompt, auto_tools=True)` — agentic tool execution (bash, write, edit, read, glob, grep) with permission system
 - 38/38 live endpoints tested against opencode v1.17.13
 - 17/17 unit tests passing
 - Python 3.10 compatibility (`NotRequired` via `typing_extensions`)
@@ -137,7 +140,19 @@ GET  /api/session                       — list sessions
 
 All other endpoints use V1 paths (see AGENTS.md of the upstream repo or inline comments in `_client.py`).
 
-All other endpoints use V1 paths (see AGENTS.md of the upstream repo or inline comments in `_client.py`).
+### Tool Execution
+```
+Session.ask(text, tool_executor=ToolExecutor())
+  → send user message (POST /session/:id/message)
+  → if tool-use parts: execute via ToolExecutor, send results, loop
+  → if no tool-use and not confirmed: auto-confirm "Exit plan mode"
+  → if no tool-use and confirmed: return text
+
+ToolExecutor:
+  - permissions: allow/ask/deny per tool
+  - default: bash=ask, others=allow
+  - tools: bash, write, edit, read, glob, grep
+```
 
 ## Binary Management
 

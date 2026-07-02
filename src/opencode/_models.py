@@ -33,7 +33,25 @@ class AssistantMessageTool(TypedDict):
     output: NotRequired[str | None]
 
 
-AssistantContent = AssistantMessageText | AssistantMessageReasoning | AssistantMessageTool
+class ToolCall(TypedDict):
+    name: str
+    input: Dict[str, Any]
+
+
+class ToolUse(TypedDict):
+    type: Literal["tool-use"]
+    toolUseID: str
+    tool: ToolCall
+
+
+class ToolResult(TypedDict):
+    type: Literal["tool-result"]
+    toolUseID: str
+    tool: ToolCall
+    output: Dict[str, Any]
+
+
+AssistantContent = AssistantMessageText | AssistantMessageReasoning | AssistantMessageTool | ToolUse
 
 
 class AssistantMessage(TypedDict):
