@@ -1,0 +1,199 @@
+<!DOCTYPE html>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Opencode Chat</title>
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { font-family: system-ui, sans-serif; background: #111; color: #eee; height: 100vh; display: flex; flex-direction: column; }
+header { background: #1a1a2e; padding: 12px 20px; border-bottom: 1px solid #333; display: flex; align-items: center; gap: 12px; }
+header h1 { font-size: 18px; color: #7c3aed; }
+#status { font-size: 12px; padding: 4px 10px; border-radius: 4px; background: #222; }
+#status.online { color: #22c55e; }
+#status.offline { color: #ef4444; }
+#status.waiting { color: #f59e0b; }
+#chat { flex: 1; overflow-y: auto; padding: 16px 20px; display: flex; flex-direction: column; gap: 12px; }
+.msg { max-width: 85%; padding: 10px 14px; border-radius: 8px; line-height: 1.5; font-size: 14px; white-space: pre-wrap; }
+.msg.user { background: #1e3a5f; align-self: flex-end; }
+.msg.assistant { background: #1a1a2e; align-self: flex-start; border: 1px solid #333; }
+.msg.tool { background: #1a2e1a; align-self: flex-start; border: 1px solid #2a4a2a; font-size: 12px; font-family: monospace; color: #86efac; }
+.msg.reasoning { background: #2e1a1a; align-self: flex-start; border: 1px solid #4a2a2a; font-size: 12px; font-style: italic; color: #fca5a5; }
+.msg .label { font-size: 10px; text-transform: uppercase; opacity: .5; margin-bottom: 4px; }
+.msg .tool-name { color: #7c3aed; font-weight: bold; }
+#input-area { display: flex; gap: 8px; padding: 12px 20px; border-top: 1px solid #333; background: #1a1a2e; }
+#input { flex: 1; padding: 10px 14px; border: 1px solid #333; border-radius: 6px; background: #222; color: #eee; font-size: 14px; outline: none; }
+#input:focus { border-color: #7c3aed; }
+#send { padding: 10px 20px; border: none; border-radius: 6px; background: #7c3aed; color: #fff; font-size: 14px; cursor: pointer; }
+#send:hover { background: #6d28d9; }
+#send:disabled { opacity: .5; cursor: default; }
+.spinner { display: inline-block; width: 16px; height: 16px; border: 2px solid #7c3aed; border-top-color: transparent; border-radius: 50%; animation: spin .6s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
+</style>
+
+<header>
+  <h1>Opencode</h1>
+  <span id="status" class="offline">offline</span>
+</header>
+
+<div id="chat"></div>
+
+<div id="input-area">
+  <input id="input" type="text" placeholder="Type a message..." disabled autofocus>
+  <button id="send" disabled>Send</button>
+</div>
+
+<script>
+const STATUS = document.getElementById('status');
+const CHAT = document.getElementById('chat');
+const INPUT = document.getElementById('input');
+const SEND = document.getElementById('send');
+
+let sessionId = null;
+let loading = false;
+
+function setStatus(text, cls) {
+  STATUS.textContent = text;
+  STATUS.className = cls;
+}
+
+function addMessage(role, text, extra) {
+  const el = document.createElement('div');
+  el.className = 'msg ' + role;
+  if (extra) Object.assign(el, extra);
+  if (role === 'tool') {
+    el.innerHTML = '<div class="label">🛠 Tool: <span class="tool-name">' + escapeHtml(extra?.toolName || '') + '</span></div>' + escapeHtml(text);
+  } else if (role === 'reasoning') {
+    el.innerHTML = '<div class="label">💭 Reasoning</div>' + escapeHtml(text);
+  } else {
+    el.textContent = text;
+  }
+  CHAT.appendChild(el);
+  CHAT.scrollTop = CHAT.scrollHeight;
+}
+
+function escapeHtml(s) {
+  const d = document.createElement('div');
+  d.textContent = s;
+  return d.innerHTML;
+}
+
+async function api(method, path, body) {
+  const opts = { method };
+  if (body) {
+    opts.headers = { 'Content-Type': 'application/json' };
+    opts.body = JSON.stringify(body);
+  }
+  const r = await fetch(path, opts);
+  if (!r.ok) {
+    const err = await r.text();
+    throw new Error(r.status + ' ' + err.slice(0, 200));
+  }
+  const ct = r.headers.get('content-type') || '';
+  if (ct.includes('json')) return r.json();
+  return r.text();
+}
+
+async function init() {
+  setStatus('connecting...', 'waiting');
+  try {
+    const health = await api('GET', '/global/health');
+    setStatus('online (' + (health.version || '?') + ')', 'online');
+    return true;
+  } catch (e) {
+    setStatus('offline', 'offline');
+    return false;
+  }
+}
+
+async function createSession() {
+  const s = await api('POST', '/session', { agent: 'build' });
+  sessionId = s.id;
+  INPUT.disabled = false;
+  SEND.disabled = false;
+  INPUT.focus();
+  addMessage('assistant', 'Session started. How can I help you?');
+}
+
+async function sendMessage(text) {
+  if (loading || !sessionId) return;
+  loading = true;
+  SEND.disabled = true;
+  INPUT.disabled = true;
+  addMessage('user', text);
+
+  let body = { parts: [{ type: 'text', text }], model: { providerID: 'opencode', modelID: 'big-pickle' } };
+
+  let autoConfirm = true;
+  let done = false;
+  let rounds = 0;
+
+  while (!done && rounds < 25) {
+    rounds++;
+    try {
+      const result = await api('POST', '/session/' + sessionId + '/message', body);
+      const parts = result.parts || [];
+
+      const toolUses = parts.filter(p => p.type === 'tool-use');
+      if (toolUses.length > 0) {
+        for (const tu of toolUses) {
+          const toolName = tu.tool?.name || '?';
+          const toolInput = tu.tool?.input || {};
+          addMessage('tool', JSON.stringify(toolInput, null, 2), { toolName });
+        }
+        // Send tool results (in web UI, we simulate or skip real tool execution)
+        const results = toolUses.map(tu => ({
+          type: 'tool-result',
+          toolUseID: tu.toolUseID,
+          tool: { name: tu.tool?.name },
+          output: { note: 'executed via web UI' }
+        }));
+        body = results;
+        continue;
+      }
+
+      // No tool-use — text response
+      const reasoning = parts.filter(p => p.type === 'reasoning');
+      for (const rp of reasoning) {
+        addMessage('reasoning', rp.text || '');
+      }
+
+      const texts = parts.filter(p => p.type === 'text');
+      if (texts.length > 0) {
+        const full = texts.map(p => p.text).join('\n');
+        addMessage('assistant', full);
+        done = true;
+      } else if (autoConfirm) {
+        autoConfirm = false;
+        body = { parts: [{ type: 'text', text: 'Exit plan mode and proceed with execution now. Use tools as needed.' }] };
+      } else {
+        addMessage('assistant', '(no text response)');
+        done = true;
+      }
+    } catch (e) {
+      addMessage('assistant', 'Error: ' + e.message);
+      done = true;
+    }
+  }
+
+  loading = false;
+  SEND.disabled = false;
+  INPUT.disabled = false;
+  INPUT.focus();
+}
+
+SEND.addEventListener('click', () => {
+  const text = INPUT.value.trim();
+  if (!text) return;
+  INPUT.value = '';
+  sendMessage(text);
+});
+
+INPUT.addEventListener('keydown', (e) => {
+  if (e.key === 'Enter') SEND.click();
+});
+
+(async () => {
+  if (await init()) {
+    await createSession();
+  }
+})();
+</script>
