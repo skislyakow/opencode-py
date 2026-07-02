@@ -49,6 +49,8 @@ const SEND = document.getElementById('send');
 
 let sessionId = null;
 let loading = false;
+let eventSource = null;
+let streamMsgEl = null;
 
 function setStatus(text, cls) {
   STATUS.textContent = text;
@@ -58,16 +60,16 @@ function setStatus(text, cls) {
 function addMessage(role, text, extra) {
   const el = document.createElement('div');
   el.className = 'msg ' + role;
-  if (extra) Object.assign(el, extra);
   if (role === 'tool') {
-    el.innerHTML = '<div class="label">🛠 Tool: <span class="tool-name">' + escapeHtml(extra?.toolName || '') + '</span></div>' + escapeHtml(text);
+    el.innerHTML = '<div class="label">Tool: <span class="tool-name">' + escapeHtml(extra?.toolName || '') + '</span></div>' + escapeHtml(text);
   } else if (role === 'reasoning') {
-    el.innerHTML = '<div class="label">💭 Reasoning</div>' + escapeHtml(text);
+    el.innerHTML = '<div class="label">Reasoning</div>' + escapeHtml(text);
   } else {
     el.textContent = text;
   }
   CHAT.appendChild(el);
   CHAT.scrollTop = CHAT.scrollHeight;
+  return el;
 }
 
 function escapeHtml(s) {
@@ -107,10 +109,53 @@ async function init() {
 async function createSession() {
   const s = await api('POST', '/session', { agent: 'build' });
   sessionId = s.id;
+  subscribeEvents();
   INPUT.disabled = false;
   SEND.disabled = false;
   INPUT.focus();
   addMessage('assistant', 'Session started. How can I help you?');
+}
+
+function subscribeEvents() {
+  if (eventSource) eventSource.close();
+  eventSource = new EventSource('/event');
+  eventSource.onmessage = (e) => {
+    try {
+      const evt = JSON.parse(e.data);
+      const props = evt.properties || {};
+      if (props.sessionID && props.sessionID !== sessionId) return;
+
+      if (evt.type === 'message.part.delta' && props.field === 'text' && props.delta) {
+        if (!streamMsgEl) {
+          streamMsgEl = addMessage('assistant', '');
+        }
+        streamMsgEl.textContent += props.delta;
+        CHAT.scrollTop = CHAT.scrollHeight;
+      }
+
+      if (evt.type === 'message.part.updated') {
+        const part = props.part || {};
+        if (part.type === 'text' && part.text) {
+          if (!streamMsgEl) {
+            streamMsgEl = addMessage('assistant', part.text);
+          } else {
+            streamMsgEl.textContent = part.text;
+          }
+          CHAT.scrollTop = CHAT.scrollHeight;
+        }
+      }
+
+      if (evt.type === 'session.status' || evt.type === 'session.idle') {
+        streamMsgEl = null;
+        loading = false;
+        SEND.disabled = false;
+        INPUT.disabled = false;
+        INPUT.focus();
+      }
+    } catch (err) {
+      // ignore parse errors
+    }
+  };
 }
 
 async function sendMessage(text) {
@@ -118,66 +163,20 @@ async function sendMessage(text) {
   loading = true;
   SEND.disabled = true;
   INPUT.disabled = true;
+  streamMsgEl = null;
   addMessage('user', text);
 
-  let body = { parts: [{ type: 'text', text }], model: { providerID: 'opencode', modelID: 'big-pickle' } };
-
-  let autoConfirm = true;
-  let done = false;
-  let rounds = 0;
-
-  while (!done && rounds < 25) {
-    rounds++;
-    try {
-      const result = await api('POST', '/session/' + sessionId + '/message', body);
-      const parts = result.parts || [];
-
-      const toolUses = parts.filter(p => p.type === 'tool-use');
-      if (toolUses.length > 0) {
-        for (const tu of toolUses) {
-          const toolName = tu.tool?.name || '?';
-          const toolInput = tu.tool?.input || {};
-          addMessage('tool', JSON.stringify(toolInput, null, 2), { toolName });
-        }
-        // Send tool results (in web UI, we simulate or skip real tool execution)
-        const results = toolUses.map(tu => ({
-          type: 'tool-result',
-          toolUseID: tu.toolUseID,
-          tool: { name: tu.tool?.name },
-          output: { note: 'executed via web UI' }
-        }));
-        body = results;
-        continue;
-      }
-
-      // No tool-use — text response
-      const reasoning = parts.filter(p => p.type === 'reasoning');
-      for (const rp of reasoning) {
-        addMessage('reasoning', rp.text || '');
-      }
-
-      const texts = parts.filter(p => p.type === 'text');
-      if (texts.length > 0) {
-        const full = texts.map(p => p.text).join('\n');
-        addMessage('assistant', full);
-        done = true;
-      } else if (autoConfirm) {
-        autoConfirm = false;
-        body = { parts: [{ type: 'text', text: 'Exit plan mode and proceed with execution now. Use tools as needed.' }] };
-      } else {
-        addMessage('assistant', '(no text response)');
-        done = true;
-      }
-    } catch (e) {
-      addMessage('assistant', 'Error: ' + e.message);
-      done = true;
-    }
+  try {
+    await api('POST', '/session/' + sessionId + '/message', {
+      parts: [{ type: 'text', text }],
+      model: { providerID: 'opencode', modelID: 'big-pickle' }
+    });
+  } catch (e) {
+    addMessage('assistant', 'Error: ' + e.message);
+    loading = false;
+    SEND.disabled = false;
+    INPUT.disabled = false;
   }
-
-  loading = false;
-  SEND.disabled = false;
-  INPUT.disabled = false;
-  INPUT.focus();
 }
 
 SEND.addEventListener('click', () => {
