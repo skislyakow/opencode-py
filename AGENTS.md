@@ -34,8 +34,10 @@ opencode-py/
 │   ├── _models.py         # TypedDict types for API responses
 │   └── _errors.py         # OpencodeError, ApiError, BinaryNotFound
 ├── tests/
-│   └── test_client.py     # 11 unit tests (httpx MockTransport)
+│   ├── test_client.py     # 11 unit tests (httpx MockTransport)
+│   └── test_opencode.py   # 6 tests for opencode() keep/resolve_model
 ├── demo.py                # Live demo (38 endpoint checks)
+├── live.py                # Interactive multi-turn dialog script
 ├── test_live.py           # Live integration test
 ├── AGENTS.md              # This file
 ├── README.md
@@ -48,6 +50,8 @@ opencode-py/
 ## Current State (commit history)
 
 ```
+67ae119 feat(sdk): add keep parameter for multi-turn conversations
+514b0a2 fix(session): use V1 sync prompt with model support instead of V2
 4323247 fix: resolve npm .cmd wrappers to real .exe binary on Windows
 fb4b884 feat: initial Python SDK for Opencode
 ```
@@ -59,15 +63,17 @@ fb4b884 feat: initial Python SDK for Opencode
   - Global, config, sessions, files, VCS, find, MCP, auth, providers, models, LSP, formatter, tools, permissions, questions, PTY, worktree, workspace, sync, TUI
 - Session prompt via V2 API with context polling (replaced broken `v2_session_wait`)
 - `Opencode(config={"model": "opencode/big-pickle"}).ask("...")` — works end-to-end with free model
+- `opencode(prompt, keep=True)` — multi-turn conversation in same session
 - 38/38 live endpoints tested against opencode v1.17.13
-- 11/11 unit tests passing
+- 17/17 unit tests passing
 - Python 3.10 compatibility (`NotRequired` via `typing_extensions`)
+- `live.py` — interactive dialog script with `atexit` cleanup
 
 ### Known issues to fix
 
 1. **Delivery enum mismatch** — npm v1.17.13 uses `"steer"/"queue"`, but `dev` branch source uses `"immediate"/"deferred"`. Current code uses `"steer"/"queue"`. When opencode releases a new version, update `_client.py:delivery="queue"` and `_session.py` to use `"immediate"/"deferred"`.
 
-2. ~~**Config format** — `Opencode(config={"model": "anthropic/..."})` fails because config expects `provider.{id}.options.apiKey` format.~~ **RESOLVED**: Free model `opencode/big-pickle` works without any API key. Just pass `config={"model": "opencode/big-pickle"}` to `Opencode()` or use the `opencode()` convenience function. The `opencode` provider has 50 models available including `deepseek-v4-flash-free`, `mimo-v2.5-free`, `nemotron-3-ultra-free`, etc. Default model config (`"model": "opencode/big-pickle"`) is passed via `OPENCODE_CONFIG_CONTENT` env var to the server.
+2. ~~**Config format** — `Opencode(config={"model": "anthropic/..."})` fails because config expects `provider.{id}.options.apiKey` format.~~ **PARTIALLY RESOLVED**: The free `opencode` provider models work without API keys, but `OPENCODE_CONFIG_CONTENT={"model": "opencode/big-pickle"}` crashes the server with "ServeError" in v1.17.13. The model should be specified in the V1 prompt request body instead of server config. `Opencode` class works by passing `model` per-request, not via server config.
 
 3. **`v2_session_wait` broken** — `POST /api/session/{sessionID}/wait` returns "Session wait is not available yet" in v1.17.13. **FIXED**: `Session.prompt()` now polls `v2_session_context()` until an assistant message appears (see `_session.py:_poll_response`).
 
@@ -95,6 +101,21 @@ Opencode.__exit__()
   → OpencodeClient.close()
   → OpencodeServer.close()          # taskkill /T /F (win32) or SIGTERM (unix)
 ```
+
+### opencode() — convenience function with keep
+```
+_opencode_state = {"ai": ..., "session": ..., "config": ...}
+opencode(prompt, keep=True)
+  → reuse existing session.prompt(prompt)
+  → return _extract_text(msg)            # server stays alive
+opencode(prompt)            # keep=False by default
+  → Opencode.__enter__()
+  → create_session().prompt(prompt)
+  → _extract_text(msg)
+  → Opencode.__exit__()                  # server closed
+```
+When `keep=True`, state is reused across calls (same session, same server).
+Warns if different config/model passed. Clean up with `atexit` in scripts.
 
 ### OpencodeClient (low-level)
 All HTTP methods follow the pattern:
@@ -147,6 +168,9 @@ python test_live.py
 
 # Demo
 python demo.py
+
+# Interactive dialog
+python live.py
 ```
 
 ## Next Steps (priority order)
@@ -158,6 +182,10 @@ python demo.py
 2. Test `Session.prompt()` with delivery="queue" + `v2_session_wait()`
 3. Test `Opencode().ask()` end-to-end
 4. Fix any response parsing issues
+5. Add `keep=True` for multi-turn conversations in `opencode()` convenience function
+   - Module-level `_opencode_state` for server/session reuse
+   - `atexit` cleanup in `live.py`
+   - 6 unit tests for `keep` / `_resolve_model`
 
 ### Step C: Publish v0.1.0 to PyPI
 1. Create `scripts/check-upstream.py` — fetches openapi.json, diffs with local
