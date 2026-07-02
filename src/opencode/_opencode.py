@@ -161,25 +161,60 @@ class Opencode:
     ) -> Iterator[str]:
         import json
 
-        session = self.create_session()
-        prompt_body: Dict[str, Any] = {"text": prompt}
-        if files:
-            prompt_body["files"] = files
-
-        self.client.v2_session_prompt(session.id, prompt_body, delivery="steer")
-
         import httpx
 
+        session = self.create_session()
+        # Use V1 synchronous prompt — the response events arrive via /event
+        body: Dict[str, Any] = {"parts": [{"type": "text", "text": prompt}]}
+        resolved = self._resolve_model()
+        if resolved:
+            body["model"] = resolved
+
+        # Subscribe before sending to catch all events
         response = self.client.event_subscribe()
         assert isinstance(response, httpx.Response)
+
+        # Send prompt (V1 sync)
+        self.client.session_send(session.id, body)
+
+        seen_parts: set[str] = set()
+
         for line in response.iter_lines():
             if not line.startswith("data: "):
                 continue
             payload = json.loads(line[6:])
-            if payload.get("type") == "message.part.delta":
-                delta = payload.get("properties", {}).get("delta", "")
-                if delta:
-                    yield delta
+            event_type = payload.get("type")
+            props = payload.get("properties", {})
+
+            # Skip events for other sessions
+            sid = props.get("sessionID")
+            if sid is not None and sid != session.id:
+                continue
+
+            if event_type == "message.part.delta":
+                if props.get("field") == "text":
+                    part_id = props.get("partID", "")
+                    delta = props.get("delta", "")
+                    if delta:
+                        seen_parts.add(part_id)
+                        yield delta
+
+            elif event_type == "message.part.updated":
+                part = props.get("part", {})
+                part_id = part.get("id", "")
+                if part_id not in seen_parts and part.get("type") == "text":
+                    text = part.get("text", "")
+                    if text:
+                        seen_parts.add(part_id)
+                        yield text
+
+            elif event_type == "session.status":
+                status = props.get("status", {})
+                if isinstance(status, dict) and status.get("type") == "idle":
+                    break
+
+            elif event_type == "session.idle":
+                break
 
 
 def _extract_text(msg: SessionMessage) -> str:

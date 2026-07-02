@@ -93,7 +93,8 @@ class AsyncOpendcodeClient:
         url = self._build_url(path)
         params = self._merge_params(params)
         hdrs = {"Content-Type": "application/json", **(headers or {})}
-        return await self._client.request(method, url, params=params, json=json_body, headers=hdrs)
+        request = self._client.build_request(method, url, params=params, json=json_body, headers=hdrs)
+        return await self._client.send(request, stream=True)
 
     # ------------------------------------------------------------------
     # Global
