@@ -12,6 +12,7 @@ from opencode._models import (
 from opencode._opencode import Opencode, opencode
 from opencode._server import OpencodeServer, create_opencode_server
 from opencode._session import Session
+from opencode._tools import ToolExecutor
 
 __version__ = "0.1.0"
 
@@ -28,6 +29,7 @@ __all__ = [
     "OpendcodeServer",
     "ServerStartupTimeout",
     "Session",
+    "ToolExecutor",
     "SessionInfo",
     "SessionMessage",
     "UserMessage",

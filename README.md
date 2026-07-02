@@ -46,6 +46,52 @@ with Opencode() as ai:
     print(f"AI: {msg2}")
 ```
 
+### Multi-turn (keep mode)
+
+```python
+from opencode import opencode
+
+# keep=True — сервер и сессия живут между вызовами
+r1 = opencode("Меня зовут Вася", keep=True)
+r2 = opencode("Какое имя я назвал?", keep=True)  # помнит диалог
+r3 = opencode("Хватит", keep=False)  # keep=False закрывает сервер
+```
+
+### Auto-tools (агент с инструментами)
+
+```python
+r = opencode("Создай файл hello.txt", auto_tools=True)
+```
+
+Инструменты: `bash`, `write`, `edit`, `read`, `glob`, `grep`.
+
+По умолчанию `bash` спрашивает разрешение в консоли, остальные выполняются без вопроса.
+
+Кастомные пермишены:
+
+```python
+from opencode import opencode, ToolExecutor
+
+# Только чтение, bash и write запрещены
+executor = ToolExecutor(permissions={
+    "bash": "deny",
+    "write": "deny",
+    "edit": "deny",
+})
+r = opencode("Найди все файлы *.py", auto_tools=True)  # executor не передаётся, пока только через Session
+```
+
+Через `Session.ask()` напрямую:
+
+```python
+with Opencode() as ai:
+    session = ai.create_session()
+    msg = session.ask(
+        "Напиши test.py с кодом print('hello')",
+        tool_executor=ToolExecutor(permissions={"write": "allow"}),
+    )
+```
+
 ### Low-level API (any endpoint)
 
 ```python
@@ -60,6 +106,23 @@ with Opencode() as ai:
     session = ai.client.session_create()
     ai.client.v2_session_prompt(session["id"], {"text": "Hello"})
 ```
+
+### Web UI (zero dependencies)
+
+```bash
+python web/server.py
+# → открыть http://127.0.0.1:3000
+```
+
+Встроенный HTTP-сервер + прокси к `opencode serve` — никаких зависимостей кроме Python.
+
+### Interactive dialog
+
+```bash
+python live.py
+```
+
+Многострочный диалог с `keep=True`, сервер чистится при выходе (`atexit`).
 
 ### Configuration
 
