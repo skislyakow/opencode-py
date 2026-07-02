@@ -3,7 +3,7 @@
 Python SDK for [Opencode](https://opencode.ai) — the open source AI coding agent.
 
 ```bash
-pip install opencode-ai
+pip install opencode-py
 ```
 
 ## Quick start

@@ -1,5 +1,5 @@
 [project]
-name = "opencode-ai"
+name = "opencode-py"
 version = "0.1.0"
 description = "Python SDK for Opencode — the open source AI coding agent"
 readme = "README.md"

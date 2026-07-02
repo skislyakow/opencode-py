@@ -2,7 +2,7 @@
 
 ## Project Overview
 
-Python SDK for [Opencode](https://opencode.ai) — a PyPI package (`opencode-ai`) that launches an `opencode serve` subprocess and provides both high-level and low-level APIs.
+Python SDK for [Opencode](https://opencode.ai) — a PyPI package (`opencode-py`) that launches an `opencode serve` subprocess and provides both high-level and low-level APIs.
 
 **Current version**: 0.1.0 (unreleased)
 **Python**: >=3.10
@@ -253,8 +253,13 @@ python web/server.py
 
 ### Step C: Publish v0.1.0 to PyPI
 1. ~~Create `scripts/check-upstream.py` — fetches openapi.json, diffs with local~~ ✅ DONE
-2. Create GitHub Actions CI (tests on push)
+2. ~~Create GitHub Actions CI (tests on push)~~ ✅ DONE
 3. Publish to TestPyPI first, then PyPI
+   - `pip install build twine`
+   - `python -m build`
+   - `twine upload --repository testpypi dist/*` (check first)
+   - `twine upload dist/*`
+   - Or: push tag `v0.1.0` → GitHub Actions publishes via Trusted Publishing
 
 ### Step D: Async support ✅ DONE
 1. `AsyncOpendcodeClient` using `httpx.AsyncClient` ✅
