@@ -28,3 +28,29 @@ jobs:
 
       - name: Run unit tests
         run: pytest tests/ -v
+
+  integration-docker:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Build wheel
+        run: |
+          pip install build
+          python -m build --wheel
+
+      - name: Build Docker image
+        run: docker build -t opencode-py-test tests/docker/
+
+      - name: Run smoke test
+        run: |
+          docker run --rm \
+            -v "${{ github.workspace }}/dist:/dist" \
+            opencode-py-test \
+            bash -c "pip install --force-reinstall --no-deps /dist/*.whl && python test_smoke.py"
