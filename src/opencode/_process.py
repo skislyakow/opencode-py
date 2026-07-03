@@ -5,7 +5,7 @@ import subprocess
 import sys
 
 
-def stop(proc: subprocess.Popen) -> None:
+def stop(proc: subprocess.Popen[bytes]) -> None:
     if proc.poll() is not None:
         return
     if sys.platform == "win32" and proc.pid:

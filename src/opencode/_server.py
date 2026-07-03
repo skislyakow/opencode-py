@@ -13,7 +13,7 @@ from opencode._process import stop
 
 
 class OpencodeServer:
-    def __init__(self, proc: subprocess.Popen, url: str, binary: str):
+    def __init__(self, proc: subprocess.Popen[bytes], url: str, binary: str):
         self._proc = proc
         self.url = url
         self.binary = binary
