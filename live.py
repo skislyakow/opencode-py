@@ -15,7 +15,7 @@ def _cleanup() -> None:
 
 atexit.register(_cleanup)
 
-print("Диалог с opencode (Enter — отправить, Ctrl+C — выход)")
+print("Dialog with opencode (Enter — send, Ctrl+C — exit)")
 print()
 
 while True:
