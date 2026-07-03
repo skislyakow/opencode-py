@@ -59,4 +59,4 @@ jobs:
           docker run --rm \
             -v "${{ github.workspace }}/dist:/dist" \
             opencode-py-test \
-            bash -c "pip install --force-reinstall --no-deps /dist/*.whl && python test_smoke.py"
+            bash -c "pip install --force-reinstall /dist/*.whl && python test_smoke.py"
