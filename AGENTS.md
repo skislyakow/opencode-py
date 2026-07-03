@@ -301,6 +301,23 @@ python web/server.py
 1. Bump version in `pyproject.toml` to `0.2.0`
 2. Publish to PyPI via Trusted Publishing
 
+## Release Process
+
+Run `python scripts/check-release.py` to check if a new PyPI release is needed.
+The script compares the version in `pyproject.toml` with the latest git tag
+and reports unreleased commits.
+
+**Release checklist:**
+- [ ] `python scripts/check-release.py -v` — confirms release is due
+- [ ] `git log --oneline v0.1.1..HEAD` — review unreleased changes
+- [ ] Version bumped in `pyproject.toml`
+- [ ] CI green on master
+- [ ] `python -m build && twine check dist/*` — wheel is valid
+
+**Proactive behavior**: At the start of each session, I will run
+`python scripts/check-release.py` automatically and alert you if a release
+is due (commits since last tag without version bump).
+
 ### Step J: Compare with official SDK
 1. Evaluate `opencode-ai` (official Stainless SDK) for low-level layer
 2. Consider using their client as base with our high-level wrapper
