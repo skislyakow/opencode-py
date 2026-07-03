@@ -49,4 +49,4 @@ git push
 | Version | Date | Highlights |
 |---------|------|------------|
 | 0.1.1   | —    | Initial PyPI release |
-| 0.2.0   | TBD  | Pydantic models, retry, typed errors, logging, async, streaming, auto-tools, web UI |
+| 0.2.0   | 2025-07-03 | Pydantic models, retry, typed errors, logging, async, streaming, auto-tools, web UI |

@@ -309,7 +309,7 @@ and reports unreleased commits.
 
 **Release checklist:**
 - [ ] `python scripts/check-release.py -v` — confirms release is due
-- [ ] `git log --oneline v0.1.1..HEAD` — review unreleased changes
+- [ ] `git log --oneline v0.2.0..HEAD` — review unreleased changes
 - [ ] Version bumped in `pyproject.toml`
 - [ ] CI green on master
 - [ ] `python -m build && twine check dist/*` — wheel is valid
