@@ -1,11 +1,8 @@
 from __future__ import annotations
 
-try:
-    from typing import NotRequired
-except ImportError:
-    from typing_extensions import NotRequired  # Python <3.11
-
 from typing import Any, Literal, TypedDict
+
+from typing_extensions import NotRequired
 
 
 class SessionInfo(TypedDict):
@@ -51,7 +48,12 @@ class ToolResult(TypedDict):
     output: dict[str, Any]
 
 
-AssistantContent = AssistantMessageText | AssistantMessageReasoning | AssistantMessageTool | ToolUse
+AssistantContent = (
+    AssistantMessageText
+    | AssistantMessageReasoning
+    | AssistantMessageTool
+    | ToolUse
+)
 
 
 class AssistantMessage(TypedDict):
