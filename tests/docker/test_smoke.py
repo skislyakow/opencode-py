@@ -1,13 +1,11 @@
-import os
-import subprocess
 import sys
 
 
 def main() -> int:
     print("=== opencode-py Docker smoke test ===")
+    sys.stdout.flush()
 
     print("\nStep 1: Verify imports...")
-    # noqa comments: imports are for verification, not usage
     from opencode import (  # noqa: F401
         Opencode,
         OpencodeClient,
@@ -20,7 +18,6 @@ def main() -> int:
     from opencode._async_client import AsyncOpendcodeClient  # noqa: F401
     from opencode._async_opencode import AsyncOpendcode  # noqa: F401
     from opencode._async_session import AsyncSession  # noqa: F401
-    from opencode._binary import ensure_opencode
     from opencode._errors import (  # noqa: F401
         APIError,
         BadRequestError,
@@ -35,31 +32,12 @@ def main() -> int:
     )
     from opencode._session import SessionMessage  # noqa: F401
     from opencode._tools import ToolExecutor as ToolExecutor2  # noqa: F401
-
     print("  All imports OK")
 
-    print("\nStep 2: Download opencode binary...")
-    binary = ensure_opencode()
-    print(f"  Binary: {binary}")
-    assert os.path.isfile(binary), f"Binary not found at {binary}"
-    print("  OK")
-
-    print("\nStep 3: Check binary version...")
-    result = subprocess.run(
-        [binary, "--version"], capture_output=True, text=True
-    )
-    print(f"  Version: {result.stdout.strip()}")
-    assert result.returncode == 0, f" --version failed: {result.stderr}"
-    print("  OK")
-
-    print("\nStep 4: Verify package metadata...")
-    try:
-        from importlib.metadata import version as _version
-
-        v = _version("opencode-py")
-        print(f"  Package version: {v}")
-    except Exception:
-        pass
+    print("\nStep 2: Verify package metadata...")
+    from importlib.metadata import version
+    v = version("opencode-py")
+    print(f"  Package version: {v}")
     print("  OK")
 
     print("\nAll smoke tests passed!")

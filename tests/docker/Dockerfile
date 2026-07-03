@@ -8,6 +8,4 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 COPY test_smoke.py .
 
-RUN pip install opencode-py
-
 CMD ["python", "test_smoke.py"]
