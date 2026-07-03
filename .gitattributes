@@ -1,0 +1,36 @@
+* text=auto eol=lf
+
+# Python
+*.py text
+*.pyi text
+*.pyw text
+
+# Markdown
+*.md text
+*.mdx text
+
+# Config
+*.toml text
+*.ini text
+*.cfg text
+*.yml text
+*.yaml text
+*.json text
+
+# Git
+.gitattributes text
+.gitignore text
+
+# Batch scripts (Windows needs CRLF)
+*.bat text eol=crlf
+*.cmd text eol=crlf
+
+# Shell scripts (must stay LF)
+*.sh text eol=lf
+
+# Binaries
+*.png binary
+*.jpg binary
+*.ico binary
+*.exe binary
+*.dll binary
