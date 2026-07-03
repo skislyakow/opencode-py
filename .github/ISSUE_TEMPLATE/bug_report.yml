@@ -1,0 +1,29 @@
+name: Bug Report
+description: Report a bug or unexpected behavior
+labels: ["bug"]
+
+body:
+  - type: textarea
+    id: description
+    attributes:
+      label: Description
+      description: What happened?
+    validations:
+      required: true
+
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Steps to reproduce
+      description: Minimal code or commands to reproduce.
+      render: python
+
+  - type: textarea
+    id: environment
+    attributes:
+      label: Environment
+      description: |
+        - OS: [e.g. Windows 11, Ubuntu 22.04]
+        - Python version:
+        - opencode-py version:
+        - opencode version (if relevant):

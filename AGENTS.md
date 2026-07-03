@@ -4,7 +4,7 @@
 
 Python SDK for [Opencode](https://opencode.ai) — a PyPI package (`opencode-py`) that launches an `opencode serve` subprocess and provides both high-level and low-level APIs.
 
-**Current version**: 0.1.0 (unreleased)
+**Current version**: 0.1.1
 **Python**: >=3.10
 **Dependencies**: only `httpx>=0.27.0`
 **Build**: hatchling
