@@ -118,7 +118,7 @@ class AsyncSession:
                 parts = [
                     {
                         "type": "text",
-                        "text": "Exit plan mode and proceed with execution now. Use tools as needed.",
+                        "text": "Exit plan mode and proceed. Use tools as needed.",
                     }
                 ]
                 continue
