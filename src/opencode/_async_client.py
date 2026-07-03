@@ -126,47 +126,47 @@ class AsyncOpendcodeClient:
     # Config
     # ------------------------------------------------------------------
 
-    async def config_get(self, **kwargs) -> Any:
+    async def config_get(self, **kwargs: Any) -> Any:
         return await self._request("GET", "/config", params=kwargs)
 
-    async def config_update(self, config: Any, **kwargs) -> Any:
+    async def config_update(self, config: Any, **kwargs: Any) -> Any:
         return await self._request("PATCH", "/config", json_body={"config": config}, params=kwargs)
 
-    async def config_providers(self, **kwargs) -> Any:
+    async def config_providers(self, **kwargs: Any) -> Any:
         return await self._request("GET", "/config/providers", params=kwargs)
 
     # ------------------------------------------------------------------
     # Session
     # ------------------------------------------------------------------
 
-    async def session_create(self, **kwargs) -> Any:
+    async def session_create(self, **kwargs: Any) -> Any:
         return await self._request("POST", "/session", json_body=kwargs or None)
 
     async def session_get(self, session_id: str) -> Any:
         return await self._request("GET", f"/session/{session_id}")
 
-    async def session_list(self, **kwargs) -> Any:
+    async def session_list(self, **kwargs: Any) -> Any:
         return await self._request("GET", "/session", params=kwargs)
 
     async def session_delete(self, session_id: str) -> Any:
         return await self._request("DELETE", f"/session/{session_id}")
 
-    async def session_update(self, session_id: str, **kwargs) -> Any:
+    async def session_update(self, session_id: str, **kwargs: Any) -> Any:
         return await self._request("PUT", f"/session/{session_id}", json_body=kwargs or None)
 
-    async def session_messages(self, session_id: str, **kwargs) -> Any:
+    async def session_messages(self, session_id: str, **kwargs: Any) -> Any:
         return await self._request("GET", f"/session/{session_id}/message", params=kwargs)
 
     async def session_message(self, session_id: str, message_id: str) -> Any:
         return await self._request("GET", f"/session/{session_id}/message/{message_id}")
 
-    async def session_fork(self, session_id: str, **kwargs) -> Any:
+    async def session_fork(self, session_id: str, **kwargs: Any) -> Any:
         return await self._request("POST", f"/session/{session_id}/fork", json_body=kwargs or None)
 
     async def session_abort(self, session_id: str) -> Any:
         return await self._request("POST", f"/session/{session_id}/abort")
 
-    async def session_init(self, session_id: str, **kwargs) -> Any:
+    async def session_init(self, session_id: str, **kwargs: Any) -> Any:
         return await self._request("POST", f"/session/{session_id}/init", json_body=kwargs or None)
 
     async def session_summarize(self, session_id: str) -> Any:
@@ -193,7 +193,7 @@ class AsyncOpendcodeClient:
     async def session_unrevert(self, session_id: str) -> Any:
         return await self._request("POST", f"/session/{session_id}/unrevert")
 
-    async def session_command(self, session_id: str, command: str, **kwargs) -> Any:
+    async def session_command(self, session_id: str, command: str, **kwargs: Any) -> Any:
         return await self._request(
             "POST", f"/session/{session_id}/command", json_body={"command": command, **kwargs}
         )
@@ -207,14 +207,14 @@ class AsyncOpendcodeClient:
     # V2 Session
     # ------------------------------------------------------------------
 
-    async def v2_session_list(self, **kwargs) -> Any:
+    async def v2_session_list(self, **kwargs: Any) -> Any:
         return await self._request("GET", "/api/session", params=kwargs)
 
     async def session_send(self, session_id: str, body: Any) -> Any:
         return await self._request("POST", f"/session/{session_id}/message", json_body=body)
 
     async def v2_session_prompt(
-        self, session_id: str, prompt: Any, *, delivery: str = "queue", **kwargs
+        self, session_id: str, prompt: Any, *, delivery: str = "queue", **kwargs: Any
     ) -> Any:
         body: dict[str, Any] = {"prompt": prompt, "delivery": delivery, **kwargs}
         return await self._request("POST", f"/api/session/{session_id}/prompt", json_body=body)
@@ -222,19 +222,19 @@ class AsyncOpendcodeClient:
     async def v2_session_wait(self, session_id: str) -> Any:
         return await self._request("POST", f"/api/session/{session_id}/wait")
 
-    async def v2_session_context(self, session_id: str, **kwargs) -> Any:
+    async def v2_session_context(self, session_id: str, **kwargs: Any) -> Any:
         return await self._request("GET", f"/api/session/{session_id}/context", params=kwargs)
 
-    async def v2_session_messages(self, session_id: str, **kwargs) -> Any:
+    async def v2_session_messages(self, session_id: str, **kwargs: Any) -> Any:
         return await self._request("GET", f"/api/session/{session_id}/message", params=kwargs)
 
     async def v2_session_compact(self, session_id: str) -> Any:
         return await self._request("POST", f"/api/session/{session_id}/compact")
 
-    async def v2_model_list(self, **kwargs) -> Any:
+    async def v2_model_list(self, **kwargs: Any) -> Any:
         return await self._request("GET", "/api/model", params=kwargs)
 
-    async def v2_provider_list(self, **kwargs) -> Any:
+    async def v2_provider_list(self, **kwargs: Any) -> Any:
         return await self._request("GET", "/api/provider", params=kwargs)
 
     async def v2_provider_get(self, provider_id: str) -> Any:
@@ -254,91 +254,91 @@ class AsyncOpendcodeClient:
     # App
     # ------------------------------------------------------------------
 
-    async def app_log(self, **kwargs) -> Any:
+    async def app_log(self, **kwargs: Any) -> Any:
         return await self._request("POST", "/log", json_body=kwargs or None)
 
-    async def app_agents(self, **kwargs) -> Any:
+    async def app_agents(self, **kwargs: Any) -> Any:
         return await self._request("GET", "/agent", params=kwargs)
 
     # ------------------------------------------------------------------
     # File
     # ------------------------------------------------------------------
 
-    async def file_read(self, path: str, **kwargs) -> Any:
+    async def file_read(self, path: str, **kwargs: Any) -> Any:
         return await self._request("GET", "/file/content", params={"path": path, **kwargs})
 
-    async def file_list(self, path: str, **kwargs) -> Any:
+    async def file_list(self, path: str, **kwargs: Any) -> Any:
         return await self._request("GET", "/file", params={"path": path, **kwargs})
 
-    async def file_status(self, **kwargs) -> Any:
+    async def file_status(self, **kwargs: Any) -> Any:
         return await self._request("GET", "/file/status", params=kwargs)
 
     # ------------------------------------------------------------------
     # Find
     # ------------------------------------------------------------------
 
-    async def find_text(self, pattern: str, **kwargs) -> Any:
+    async def find_text(self, pattern: str, **kwargs: Any) -> Any:
         return await self._request("GET", "/find", params={"pattern": pattern, **kwargs})
 
-    async def find_files(self, query: str, **kwargs) -> Any:
+    async def find_files(self, query: str, **kwargs: Any) -> Any:
         return await self._request("GET", "/find/file", params={"query": query, **kwargs})
 
-    async def find_symbols(self, query: str, **kwargs) -> Any:
+    async def find_symbols(self, query: str, **kwargs: Any) -> Any:
         return await self._request("GET", "/find/symbol", params={"query": query, **kwargs})
 
     # ------------------------------------------------------------------
     # VCS
     # ------------------------------------------------------------------
 
-    async def vcs_get(self, **kwargs) -> Any:
+    async def vcs_get(self, **kwargs: Any) -> Any:
         return await self._request("GET", "/vcs", params=kwargs)
 
-    async def vcs_status(self, **kwargs) -> Any:
+    async def vcs_status(self, **kwargs: Any) -> Any:
         return await self._request("GET", "/vcs/status", params=kwargs)
 
-    async def vcs_diff(self, mode: str = "git", **kwargs) -> Any:
+    async def vcs_diff(self, mode: str = "git", **kwargs: Any) -> Any:
         return await self._request("GET", "/vcs/diff", params={"mode": mode, **kwargs})
 
-    async def vcs_diff_raw(self, **kwargs) -> Any:
+    async def vcs_diff_raw(self, **kwargs: Any) -> Any:
         return await self._request("GET", "/vcs/diff/raw", params=kwargs)
 
-    async def vcs_apply(self, patch: str, **kwargs) -> Any:
+    async def vcs_apply(self, patch: str, **kwargs: Any) -> Any:
         return await self._request("POST", "/vcs/apply", json_body={"patch": patch, **kwargs})
 
     # ------------------------------------------------------------------
     # LSP / Formatter
     # ------------------------------------------------------------------
 
-    async def lsp_status(self, **kwargs) -> Any:
+    async def lsp_status(self, **kwargs: Any) -> Any:
         return await self._request("GET", "/lsp", params=kwargs)
 
-    async def formatter_status(self, **kwargs) -> Any:
+    async def formatter_status(self, **kwargs: Any) -> Any:
         return await self._request("GET", "/formatter", params=kwargs)
 
     # ------------------------------------------------------------------
     # Provider
     # ------------------------------------------------------------------
 
-    async def provider_list(self, **kwargs) -> Any:
+    async def provider_list(self, **kwargs: Any) -> Any:
         return await self._request("GET", "/provider", params=kwargs)
 
-    async def provider_auth(self, provider_id: str, **kwargs) -> Any:
+    async def provider_auth(self, provider_id: str, **kwargs: Any) -> Any:
         return await self._request("GET", f"/provider/{provider_id}/auth", params=kwargs)
 
     # ------------------------------------------------------------------
     # MCP
     # ------------------------------------------------------------------
 
-    async def mcp_list(self, **kwargs) -> Any:
+    async def mcp_list(self, **kwargs: Any) -> Any:
         return await self._request("GET", "/mcp", params=kwargs)
 
-    async def mcp_status(self, **kwargs) -> Any:
+    async def mcp_status(self, **kwargs: Any) -> Any:
         return await self._request("GET", "/mcp/status", params=kwargs)
 
     async def mcp_add(self, config: Any) -> Any:
         return await self._request("PUT", "/mcp", json_body={"config": config})
 
-    async def mcp_connect(self, name: str, **kwargs) -> Any:
+    async def mcp_connect(self, name: str, **kwargs: Any) -> Any:
         return await self._request("POST", f"/mcp/{name}/connect", json_body=kwargs or None)
 
     async def mcp_disconnect(self, name: str) -> Any:
@@ -348,27 +348,27 @@ class AsyncOpendcodeClient:
     # Tool
     # ------------------------------------------------------------------
 
-    async def tool_list(self, **kwargs) -> Any:
+    async def tool_list(self, **kwargs: Any) -> Any:
         return await self._request("GET", "/experimental/tool", params=kwargs)
 
-    async def tool_ids(self, **kwargs) -> Any:
+    async def tool_ids(self, **kwargs: Any) -> Any:
         return await self._request("GET", "/experimental/tool/ids", params=kwargs)
 
     # ------------------------------------------------------------------
     # Permission
     # ------------------------------------------------------------------
 
-    async def permission_list(self, **kwargs) -> Any:
+    async def permission_list(self, **kwargs: Any) -> Any:
         return await self._request("GET", "/permission", params=kwargs)
 
-    async def permission_reply(self, permission_id: str, **kwargs) -> Any:
+    async def permission_reply(self, permission_id: str, **kwargs: Any) -> Any:
         return await self._request("POST", f"/permission/{permission_id}", json_body=kwargs or None)
 
     # ------------------------------------------------------------------
     # Question
     # ------------------------------------------------------------------
 
-    async def question_list(self, **kwargs) -> Any:
+    async def question_list(self, **kwargs: Any) -> Any:
         return await self._request("GET", "/question", params=kwargs)
 
     async def question_reply(self, question_id: str, answer: Any) -> Any:
@@ -381,17 +381,17 @@ class AsyncOpendcodeClient:
     # Event (SSE)
     # ------------------------------------------------------------------
 
-    async def event_subscribe(self, **kwargs) -> httpx.Response:
+    async def event_subscribe(self, **kwargs: Any) -> httpx.Response:
         return await self._request_stream("GET", "/event", params=kwargs)
 
     # ------------------------------------------------------------------
     # PTY
     # ------------------------------------------------------------------
 
-    async def pty_list(self, **kwargs) -> Any:
+    async def pty_list(self, **kwargs: Any) -> Any:
         return await self._request("GET", "/pty", params=kwargs)
 
-    async def pty_create(self, **kwargs) -> Any:
+    async def pty_create(self, **kwargs: Any) -> Any:
         return await self._request("POST", "/pty", json_body=kwargs or None)
 
     async def pty_get(self, pty_id: str) -> Any:
@@ -400,92 +400,92 @@ class AsyncOpendcodeClient:
     async def pty_remove(self, pty_id: str) -> Any:
         return await self._request("DELETE", f"/pty/{pty_id}")
 
-    async def pty_update(self, pty_id: str, **kwargs) -> Any:
+    async def pty_update(self, pty_id: str, **kwargs: Any) -> Any:
         return await self._request("PATCH", f"/pty/{pty_id}", json_body=kwargs or None)
 
-    async def pty_shells(self, **kwargs) -> Any:
+    async def pty_shells(self, **kwargs: Any) -> Any:
         return await self._request("GET", "/pty/shells", params=kwargs)
 
     # ------------------------------------------------------------------
     # Path
     # ------------------------------------------------------------------
 
-    async def path_get(self, **kwargs) -> Any:
+    async def path_get(self, **kwargs: Any) -> Any:
         return await self._request("GET", "/path", params=kwargs)
 
     # ------------------------------------------------------------------
     # Instance
     # ------------------------------------------------------------------
 
-    async def instance_dispose(self, **kwargs) -> Any:
+    async def instance_dispose(self, **kwargs: Any) -> Any:
         return await self._request("POST", "/instance/dispose", params=kwargs)
 
     # ------------------------------------------------------------------
     # Command
     # ------------------------------------------------------------------
 
-    async def command_list(self, **kwargs) -> Any:
+    async def command_list(self, **kwargs: Any) -> Any:
         return await self._request("GET", "/command", params=kwargs)
 
     # ------------------------------------------------------------------
     # Project
     # ------------------------------------------------------------------
 
-    async def project_current(self, **kwargs) -> Any:
+    async def project_current(self, **kwargs: Any) -> Any:
         return await self._request("GET", "/project/current", params=kwargs)
 
-    async def project_list(self, **kwargs) -> Any:
+    async def project_list(self, **kwargs: Any) -> Any:
         return await self._request("GET", "/project", params=kwargs)
 
-    async def project_update(self, **kwargs) -> Any:
+    async def project_update(self, **kwargs: Any) -> Any:
         return await self._request("PATCH", "/project", json_body=kwargs or None)
 
-    async def project_init_git(self, **kwargs) -> Any:
+    async def project_init_git(self, **kwargs: Any) -> Any:
         return await self._request("POST", "/project/init-git", json_body=kwargs or None)
 
     # ------------------------------------------------------------------
     # Worktree (experimental)
     # ------------------------------------------------------------------
 
-    async def worktree_list(self, **kwargs) -> Any:
+    async def worktree_list(self, **kwargs: Any) -> Any:
         return await self._request("GET", "/experimental/worktree", params=kwargs)
 
-    async def worktree_create(self, **kwargs) -> Any:
+    async def worktree_create(self, **kwargs: Any) -> Any:
         return await self._request("POST", "/experimental/worktree", json_body=kwargs or None)
 
-    async def worktree_remove(self, **kwargs) -> Any:
+    async def worktree_remove(self, **kwargs: Any) -> Any:
         return await self._request("DELETE", "/experimental/worktree", params=kwargs)
 
-    async def worktree_reset(self, **kwargs) -> Any:
+    async def worktree_reset(self, **kwargs: Any) -> Any:
         return await self._request("POST", "/experimental/worktree/reset", json_body=kwargs or None)
 
     # ------------------------------------------------------------------
     # Workspace (experimental)
     # ------------------------------------------------------------------
 
-    async def workspace_list(self, **kwargs) -> Any:
+    async def workspace_list(self, **kwargs: Any) -> Any:
         return await self._request("GET", "/experimental/workspace", params=kwargs)
 
-    async def workspace_create(self, **kwargs) -> Any:
+    async def workspace_create(self, **kwargs: Any) -> Any:
         return await self._request("POST", "/experimental/workspace", json_body=kwargs or None)
 
-    async def workspace_status(self, **kwargs) -> Any:
+    async def workspace_status(self, **kwargs: Any) -> Any:
         return await self._request("GET", "/experimental/workspace/status", params=kwargs)
 
     async def workspace_remove(self, workspace_id: str) -> Any:
         return await self._request("DELETE", f"/experimental/workspace/{workspace_id}")
 
-    async def workspace_warp(self, **kwargs) -> Any:
+    async def workspace_warp(self, **kwargs: Any) -> Any:
         return await self._request("POST", "/experimental/workspace/warp", json_body=kwargs or None)
 
     # ------------------------------------------------------------------
     # Sync (experimental)
     # ------------------------------------------------------------------
 
-    async def sync_start(self, **kwargs) -> Any:
+    async def sync_start(self, **kwargs: Any) -> Any:
         return await self._request("POST", "/experimental/sync/start", json_body=kwargs or None)
 
-    async def sync_steal(self, **kwargs) -> Any:
+    async def sync_steal(self, **kwargs: Any) -> Any:
         return await self._request("POST", "/experimental/sync/steal", json_body=kwargs or None)
 
     async def sync_replay(self, session_id: str) -> Any:
@@ -498,19 +498,19 @@ class AsyncOpendcodeClient:
     # TUI
     # ------------------------------------------------------------------
 
-    async def tui_submit_prompt(self, **kwargs) -> Any:
+    async def tui_submit_prompt(self, **kwargs: Any) -> Any:
         return await self._request("POST", "/tui/submit", json_body=kwargs or None)
 
-    async def tui_append_prompt(self, **kwargs) -> Any:
+    async def tui_append_prompt(self, **kwargs: Any) -> Any:
         return await self._request("POST", "/tui/append", json_body=kwargs or None)
 
     async def tui_clear_prompt(self) -> Any:
         return await self._request("POST", "/tui/clear")
 
-    async def tui_execute_command(self, **kwargs) -> Any:
+    async def tui_execute_command(self, **kwargs: Any) -> Any:
         return await self._request("POST", "/tui/command", json_body=kwargs or None)
 
-    async def tui_show_toast(self, **kwargs) -> Any:
+    async def tui_show_toast(self, **kwargs: Any) -> Any:
         return await self._request("POST", "/tui/toast", json_body=kwargs or None)
 
     async def tui_open_sessions(self) -> Any:
@@ -525,10 +525,10 @@ class AsyncOpendcodeClient:
     async def tui_open_help(self) -> Any:
         return await self._request("POST", "/tui/help")
 
-    async def tui_publish(self, **kwargs) -> Any:
+    async def tui_publish(self, **kwargs: Any) -> Any:
         return await self._request("POST", "/tui/publish", json_body=kwargs or None)
 
-    async def tui_control_response(self, **kwargs) -> Any:
+    async def tui_control_response(self, **kwargs: Any) -> Any:
         return await self._request("POST", "/tui/control/response", json_body=kwargs or None)
 
     async def tui_control_next(self, session_id: str) -> Any:

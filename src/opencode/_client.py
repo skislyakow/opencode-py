@@ -124,47 +124,47 @@ class OpencodeClient:
     # Config
     # ------------------------------------------------------------------
 
-    def config_get(self, **kwargs) -> Any:
+    def config_get(self, **kwargs: Any) -> Any:
         return self._request("GET", "/config", params=kwargs)
 
-    def config_update(self, config: Any, **kwargs) -> Any:
+    def config_update(self, config: Any, **kwargs: Any) -> Any:
         return self._request("PATCH", "/config", json_body={"config": config}, params=kwargs)
 
-    def config_providers(self, **kwargs) -> Any:
+    def config_providers(self, **kwargs: Any) -> Any:
         return self._request("GET", "/config/providers", params=kwargs)
 
     # ------------------------------------------------------------------
     # Session
     # ------------------------------------------------------------------
 
-    def session_create(self, **kwargs) -> Any:
+    def session_create(self, **kwargs: Any) -> Any:
         return self._request("POST", "/session", json_body=kwargs or None)
 
     def session_get(self, session_id: str) -> Any:
         return self._request("GET", f"/session/{session_id}")
 
-    def session_list(self, **kwargs) -> Any:
+    def session_list(self, **kwargs: Any) -> Any:
         return self._request("GET", "/session", params=kwargs)
 
     def session_delete(self, session_id: str) -> Any:
         return self._request("DELETE", f"/session/{session_id}")
 
-    def session_update(self, session_id: str, **kwargs) -> Any:
+    def session_update(self, session_id: str, **kwargs: Any) -> Any:
         return self._request("PUT", f"/session/{session_id}", json_body=kwargs or None)
 
-    def session_messages(self, session_id: str, **kwargs) -> Any:
+    def session_messages(self, session_id: str, **kwargs: Any) -> Any:
         return self._request("GET", f"/session/{session_id}/message", params=kwargs)
 
     def session_message(self, session_id: str, message_id: str) -> Any:
         return self._request("GET", f"/session/{session_id}/message/{message_id}")
 
-    def session_fork(self, session_id: str, **kwargs) -> Any:
+    def session_fork(self, session_id: str, **kwargs: Any) -> Any:
         return self._request("POST", f"/session/{session_id}/fork", json_body=kwargs or None)
 
     def session_abort(self, session_id: str) -> Any:
         return self._request("POST", f"/session/{session_id}/abort")
 
-    def session_init(self, session_id: str, **kwargs) -> Any:
+    def session_init(self, session_id: str, **kwargs: Any) -> Any:
         return self._request("POST", f"/session/{session_id}/init", json_body=kwargs or None)
 
     def session_summarize(self, session_id: str) -> Any:
@@ -191,7 +191,7 @@ class OpencodeClient:
     def session_unrevert(self, session_id: str) -> Any:
         return self._request("POST", f"/session/{session_id}/unrevert")
 
-    def session_command(self, session_id: str, command: str, **kwargs) -> Any:
+    def session_command(self, session_id: str, command: str, **kwargs: Any) -> Any:
         return self._request(
             "POST", f"/session/{session_id}/command", json_body={"command": command, **kwargs}
         )
@@ -203,14 +203,14 @@ class OpencodeClient:
     # V2 Session
     # ------------------------------------------------------------------
 
-    def v2_session_list(self, **kwargs) -> Any:
+    def v2_session_list(self, **kwargs: Any) -> Any:
         return self._request("GET", "/api/session", params=kwargs)
 
     def session_send(self, session_id: str, body: Any) -> Any:
         return self._request("POST", f"/session/{session_id}/message", json_body=body)
 
     def v2_session_prompt(
-        self, session_id: str, prompt: Any, *, delivery: str = "queue", **kwargs
+        self, session_id: str, prompt: Any, *, delivery: str = "queue", **kwargs: Any
     ) -> Any:
         body: dict[str, Any] = {"prompt": prompt, "delivery": delivery, **kwargs}
         return self._request("POST", f"/api/session/{session_id}/prompt", json_body=body)
@@ -218,19 +218,19 @@ class OpencodeClient:
     def v2_session_wait(self, session_id: str) -> Any:
         return self._request("POST", f"/api/session/{session_id}/wait")
 
-    def v2_session_context(self, session_id: str, **kwargs) -> Any:
+    def v2_session_context(self, session_id: str, **kwargs: Any) -> Any:
         return self._request("GET", f"/api/session/{session_id}/context", params=kwargs)
 
-    def v2_session_messages(self, session_id: str, **kwargs) -> Any:
+    def v2_session_messages(self, session_id: str, **kwargs: Any) -> Any:
         return self._request("GET", f"/api/session/{session_id}/message", params=kwargs)
 
     def v2_session_compact(self, session_id: str) -> Any:
         return self._request("POST", f"/api/session/{session_id}/compact")
 
-    def v2_model_list(self, **kwargs) -> Any:
+    def v2_model_list(self, **kwargs: Any) -> Any:
         return self._request("GET", "/api/model", params=kwargs)
 
-    def v2_provider_list(self, **kwargs) -> Any:
+    def v2_provider_list(self, **kwargs: Any) -> Any:
         return self._request("GET", "/api/provider", params=kwargs)
 
     def v2_provider_get(self, provider_id: str) -> Any:
@@ -250,91 +250,91 @@ class OpencodeClient:
     # App
     # ------------------------------------------------------------------
 
-    def app_log(self, **kwargs) -> Any:
+    def app_log(self, **kwargs: Any) -> Any:
         return self._request("POST", "/log", json_body=kwargs or None)
 
-    def app_agents(self, **kwargs) -> Any:
+    def app_agents(self, **kwargs: Any) -> Any:
         return self._request("GET", "/agent", params=kwargs)
 
     # ------------------------------------------------------------------
     # File
     # ------------------------------------------------------------------
 
-    def file_read(self, path: str, **kwargs) -> Any:
+    def file_read(self, path: str, **kwargs: Any) -> Any:
         return self._request("GET", "/file/content", params={"path": path, **kwargs})
 
-    def file_list(self, path: str, **kwargs) -> Any:
+    def file_list(self, path: str, **kwargs: Any) -> Any:
         return self._request("GET", "/file", params={"path": path, **kwargs})
 
-    def file_status(self, **kwargs) -> Any:
+    def file_status(self, **kwargs: Any) -> Any:
         return self._request("GET", "/file/status", params=kwargs)
 
     # ------------------------------------------------------------------
     # Find
     # ------------------------------------------------------------------
 
-    def find_text(self, pattern: str, **kwargs) -> Any:
+    def find_text(self, pattern: str, **kwargs: Any) -> Any:
         return self._request("GET", "/find", params={"pattern": pattern, **kwargs})
 
-    def find_files(self, query: str, **kwargs) -> Any:
+    def find_files(self, query: str, **kwargs: Any) -> Any:
         return self._request("GET", "/find/file", params={"query": query, **kwargs})
 
-    def find_symbols(self, query: str, **kwargs) -> Any:
+    def find_symbols(self, query: str, **kwargs: Any) -> Any:
         return self._request("GET", "/find/symbol", params={"query": query, **kwargs})
 
     # ------------------------------------------------------------------
     # VCS
     # ------------------------------------------------------------------
 
-    def vcs_get(self, **kwargs) -> Any:
+    def vcs_get(self, **kwargs: Any) -> Any:
         return self._request("GET", "/vcs", params=kwargs)
 
-    def vcs_status(self, **kwargs) -> Any:
+    def vcs_status(self, **kwargs: Any) -> Any:
         return self._request("GET", "/vcs/status", params=kwargs)
 
-    def vcs_diff(self, mode: str = "git", **kwargs) -> Any:
+    def vcs_diff(self, mode: str = "git", **kwargs: Any) -> Any:
         return self._request("GET", "/vcs/diff", params={"mode": mode, **kwargs})
 
-    def vcs_diff_raw(self, **kwargs) -> Any:
+    def vcs_diff_raw(self, **kwargs: Any) -> Any:
         return self._request("GET", "/vcs/diff/raw", params=kwargs)
 
-    def vcs_apply(self, patch: str, **kwargs) -> Any:
+    def vcs_apply(self, patch: str, **kwargs: Any) -> Any:
         return self._request("POST", "/vcs/apply", json_body={"patch": patch, **kwargs})
 
     # ------------------------------------------------------------------
     # LSP / Formatter
     # ------------------------------------------------------------------
 
-    def lsp_status(self, **kwargs) -> Any:
+    def lsp_status(self, **kwargs: Any) -> Any:
         return self._request("GET", "/lsp", params=kwargs)
 
-    def formatter_status(self, **kwargs) -> Any:
+    def formatter_status(self, **kwargs: Any) -> Any:
         return self._request("GET", "/formatter", params=kwargs)
 
     # ------------------------------------------------------------------
     # Provider
     # ------------------------------------------------------------------
 
-    def provider_list(self, **kwargs) -> Any:
+    def provider_list(self, **kwargs: Any) -> Any:
         return self._request("GET", "/provider", params=kwargs)
 
-    def provider_auth(self, provider_id: str, **kwargs) -> Any:
+    def provider_auth(self, provider_id: str, **kwargs: Any) -> Any:
         return self._request("GET", f"/provider/{provider_id}/auth", params=kwargs)
 
     # ------------------------------------------------------------------
     # MCP
     # ------------------------------------------------------------------
 
-    def mcp_list(self, **kwargs) -> Any:
+    def mcp_list(self, **kwargs: Any) -> Any:
         return self._request("GET", "/mcp", params=kwargs)
 
-    def mcp_status(self, **kwargs) -> Any:
+    def mcp_status(self, **kwargs: Any) -> Any:
         return self._request("GET", "/mcp/status", params=kwargs)
 
     def mcp_add(self, config: Any) -> Any:
         return self._request("PUT", "/mcp", json_body={"config": config})
 
-    def mcp_connect(self, name: str, **kwargs) -> Any:
+    def mcp_connect(self, name: str, **kwargs: Any) -> Any:
         return self._request("POST", f"/mcp/{name}/connect", json_body=kwargs or None)
 
     def mcp_disconnect(self, name: str) -> Any:
@@ -344,27 +344,27 @@ class OpencodeClient:
     # Tool
     # ------------------------------------------------------------------
 
-    def tool_list(self, **kwargs) -> Any:
+    def tool_list(self, **kwargs: Any) -> Any:
         return self._request("GET", "/experimental/tool", params=kwargs)
 
-    def tool_ids(self, **kwargs) -> Any:
+    def tool_ids(self, **kwargs: Any) -> Any:
         return self._request("GET", "/experimental/tool/ids", params=kwargs)
 
     # ------------------------------------------------------------------
     # Permission
     # ------------------------------------------------------------------
 
-    def permission_list(self, **kwargs) -> Any:
+    def permission_list(self, **kwargs: Any) -> Any:
         return self._request("GET", "/permission", params=kwargs)
 
-    def permission_reply(self, permission_id: str, **kwargs) -> Any:
+    def permission_reply(self, permission_id: str, **kwargs: Any) -> Any:
         return self._request("POST", f"/permission/{permission_id}", json_body=kwargs or None)
 
     # ------------------------------------------------------------------
     # Question
     # ------------------------------------------------------------------
 
-    def question_list(self, **kwargs) -> Any:
+    def question_list(self, **kwargs: Any) -> Any:
         return self._request("GET", "/question", params=kwargs)
 
     def question_reply(self, question_id: str, answer: Any) -> Any:
@@ -377,17 +377,17 @@ class OpencodeClient:
     # Event (SSE)
     # ------------------------------------------------------------------
 
-    def event_subscribe(self, **kwargs) -> httpx.Response:
+    def event_subscribe(self, **kwargs: Any) -> httpx.Response:
         return self._request_stream("GET", "/event", params=kwargs)
 
     # ------------------------------------------------------------------
     # PTY
     # ------------------------------------------------------------------
 
-    def pty_list(self, **kwargs) -> Any:
+    def pty_list(self, **kwargs: Any) -> Any:
         return self._request("GET", "/pty", params=kwargs)
 
-    def pty_create(self, **kwargs) -> Any:
+    def pty_create(self, **kwargs: Any) -> Any:
         return self._request("POST", "/pty", json_body=kwargs or None)
 
     def pty_get(self, pty_id: str) -> Any:
@@ -396,92 +396,92 @@ class OpencodeClient:
     def pty_remove(self, pty_id: str) -> Any:
         return self._request("DELETE", f"/pty/{pty_id}")
 
-    def pty_update(self, pty_id: str, **kwargs) -> Any:
+    def pty_update(self, pty_id: str, **kwargs: Any) -> Any:
         return self._request("PATCH", f"/pty/{pty_id}", json_body=kwargs or None)
 
-    def pty_shells(self, **kwargs) -> Any:
+    def pty_shells(self, **kwargs: Any) -> Any:
         return self._request("GET", "/pty/shells", params=kwargs)
 
     # ------------------------------------------------------------------
     # Path
     # ------------------------------------------------------------------
 
-    def path_get(self, **kwargs) -> Any:
+    def path_get(self, **kwargs: Any) -> Any:
         return self._request("GET", "/path", params=kwargs)
 
     # ------------------------------------------------------------------
     # Instance
     # ------------------------------------------------------------------
 
-    def instance_dispose(self, **kwargs) -> Any:
+    def instance_dispose(self, **kwargs: Any) -> Any:
         return self._request("POST", "/instance/dispose", params=kwargs)
 
     # ------------------------------------------------------------------
     # Command
     # ------------------------------------------------------------------
 
-    def command_list(self, **kwargs) -> Any:
+    def command_list(self, **kwargs: Any) -> Any:
         return self._request("GET", "/command", params=kwargs)
 
     # ------------------------------------------------------------------
     # Project
     # ------------------------------------------------------------------
 
-    def project_current(self, **kwargs) -> Any:
+    def project_current(self, **kwargs: Any) -> Any:
         return self._request("GET", "/project/current", params=kwargs)
 
-    def project_list(self, **kwargs) -> Any:
+    def project_list(self, **kwargs: Any) -> Any:
         return self._request("GET", "/project", params=kwargs)
 
-    def project_update(self, **kwargs) -> Any:
+    def project_update(self, **kwargs: Any) -> Any:
         return self._request("PATCH", "/project", json_body=kwargs or None)
 
-    def project_init_git(self, **kwargs) -> Any:
+    def project_init_git(self, **kwargs: Any) -> Any:
         return self._request("POST", "/project/init-git", json_body=kwargs or None)
 
     # ------------------------------------------------------------------
     # Worktree (experimental)
     # ------------------------------------------------------------------
 
-    def worktree_list(self, **kwargs) -> Any:
+    def worktree_list(self, **kwargs: Any) -> Any:
         return self._request("GET", "/experimental/worktree", params=kwargs)
 
-    def worktree_create(self, **kwargs) -> Any:
+    def worktree_create(self, **kwargs: Any) -> Any:
         return self._request("POST", "/experimental/worktree", json_body=kwargs or None)
 
-    def worktree_remove(self, **kwargs) -> Any:
+    def worktree_remove(self, **kwargs: Any) -> Any:
         return self._request("DELETE", "/experimental/worktree", params=kwargs)
 
-    def worktree_reset(self, **kwargs) -> Any:
+    def worktree_reset(self, **kwargs: Any) -> Any:
         return self._request("POST", "/experimental/worktree/reset", json_body=kwargs or None)
 
     # ------------------------------------------------------------------
     # Workspace (experimental)
     # ------------------------------------------------------------------
 
-    def workspace_list(self, **kwargs) -> Any:
+    def workspace_list(self, **kwargs: Any) -> Any:
         return self._request("GET", "/experimental/workspace", params=kwargs)
 
-    def workspace_create(self, **kwargs) -> Any:
+    def workspace_create(self, **kwargs: Any) -> Any:
         return self._request("POST", "/experimental/workspace", json_body=kwargs or None)
 
-    def workspace_status(self, **kwargs) -> Any:
+    def workspace_status(self, **kwargs: Any) -> Any:
         return self._request("GET", "/experimental/workspace/status", params=kwargs)
 
     def workspace_remove(self, workspace_id: str) -> Any:
         return self._request("DELETE", f"/experimental/workspace/{workspace_id}")
 
-    def workspace_warp(self, **kwargs) -> Any:
+    def workspace_warp(self, **kwargs: Any) -> Any:
         return self._request("POST", "/experimental/workspace/warp", json_body=kwargs or None)
 
     # ------------------------------------------------------------------
     # Sync (experimental)
     # ------------------------------------------------------------------
 
-    def sync_start(self, **kwargs) -> Any:
+    def sync_start(self, **kwargs: Any) -> Any:
         return self._request("POST", "/experimental/sync/start", json_body=kwargs or None)
 
-    def sync_steal(self, **kwargs) -> Any:
+    def sync_steal(self, **kwargs: Any) -> Any:
         return self._request("POST", "/experimental/sync/steal", json_body=kwargs or None)
 
     def sync_replay(self, session_id: str) -> Any:
@@ -494,19 +494,19 @@ class OpencodeClient:
     # TUI
     # ------------------------------------------------------------------
 
-    def tui_submit_prompt(self, **kwargs) -> Any:
+    def tui_submit_prompt(self, **kwargs: Any) -> Any:
         return self._request("POST", "/tui/submit", json_body=kwargs or None)
 
-    def tui_append_prompt(self, **kwargs) -> Any:
+    def tui_append_prompt(self, **kwargs: Any) -> Any:
         return self._request("POST", "/tui/append", json_body=kwargs or None)
 
     def tui_clear_prompt(self) -> Any:
         return self._request("POST", "/tui/clear")
 
-    def tui_execute_command(self, **kwargs) -> Any:
+    def tui_execute_command(self, **kwargs: Any) -> Any:
         return self._request("POST", "/tui/command", json_body=kwargs or None)
 
-    def tui_show_toast(self, **kwargs) -> Any:
+    def tui_show_toast(self, **kwargs: Any) -> Any:
         return self._request("POST", "/tui/toast", json_body=kwargs or None)
 
     def tui_open_sessions(self) -> Any:
@@ -521,10 +521,10 @@ class OpencodeClient:
     def tui_open_help(self) -> Any:
         return self._request("POST", "/tui/help")
 
-    def tui_publish(self, **kwargs) -> Any:
+    def tui_publish(self, **kwargs: Any) -> Any:
         return self._request("POST", "/tui/publish", json_body=kwargs or None)
 
-    def tui_control_response(self, **kwargs) -> Any:
+    def tui_control_response(self, **kwargs: Any) -> Any:
         return self._request("POST", "/tui/control/response", json_body=kwargs or None)
 
     def tui_control_next(self, session_id: str) -> Any:
