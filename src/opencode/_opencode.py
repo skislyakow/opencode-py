@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 import warnings
 from collections.abc import Iterator
-from typing import Any
+from typing import Any, cast
 
 from opencode._client import OpencodeClient
 from opencode._models import SessionMessage
@@ -113,7 +113,7 @@ class Opencode:
     # High-level API
     # ------------------------------------------------------------------
 
-    def create_session(self, agent: str | None = None, **kwargs) -> Session:
+    def create_session(self, agent: str | None = None, **kwargs: Any) -> Session:
         if agent:
             kwargs["agent"] = agent
         raw = self.client.session_create(**kwargs)
@@ -229,14 +229,14 @@ def _extract_text(msg: SessionMessage) -> str:
         structured = msg.get("structured")
         if structured is not None:
             return json.dumps(structured, ensure_ascii=False, default=str)
-        parts = msg.get("content", [])
+        parts: list[dict[str, Any]] = cast("list[dict[str, Any]]", msg.get("content", []))
         texts: list[str] = []
         for part in parts:
             if isinstance(part, dict) and part.get("type") == "text":
                 texts.append(part.get("text", ""))
         return "\n".join(texts)
     if isinstance(msg, dict) and msg.get("type") == "user":
-        return msg.get("text", "")
+        return cast(str, msg.get("text", ""))
     return str(msg)
 
 

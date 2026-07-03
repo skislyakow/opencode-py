@@ -95,7 +95,7 @@ class AsyncOpendcode:
     # High-level API
     # ------------------------------------------------------------------
 
-    async def create_session(self, agent: str | None = None, **kwargs) -> AsyncSession:
+    async def create_session(self, agent: str | None = None, **kwargs: Any) -> AsyncSession:
         if agent:
             kwargs["agent"] = agent
         raw = await self.client.session_create(**kwargs)
@@ -106,7 +106,7 @@ class AsyncOpendcode:
         self,
         prompt: str,
         *,
-        files: dict[str, Any] | None = None,
+        files: list[dict[str, Any]] | None = None,
         auto_tools: bool = False,
         agent: str | None = None,
         format: dict[str, Any] | None = None,
@@ -142,7 +142,7 @@ class AsyncOpendcode:
         self,
         prompt: str,
         *,
-        files: dict[str, Any] | None = None,
+        files: list[dict[str, Any]] | None = None,
         session: AsyncSession | None = None,
     ) -> AsyncIterator[str]:
         import json

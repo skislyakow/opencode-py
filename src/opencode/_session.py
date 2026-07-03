@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, cast
 
 from opencode._client import OpencodeClient
 from opencode._models import SessionMessage
@@ -55,9 +55,9 @@ class Session:
             }
             if structured is not None:
                 msg["structured"] = structured
-            return msg
+            return cast(SessionMessage, msg)
 
-        return result
+        return cast(SessionMessage, result)
 
     def ask(
         self,
@@ -85,7 +85,7 @@ class Session:
 
             result = self._client.session_send(self.id, body)
             if not isinstance(result, dict):
-                return result
+                return cast(SessionMessage, result)
 
             parts_list = result.get("parts", [])
             info = result.get("info", {})
@@ -140,15 +140,15 @@ class Session:
             structured = result.get("structured") or info.get("structured")
             if structured is not None:
                 msg["structured"] = structured
-            return msg
+            return cast(SessionMessage, msg)
 
         raise RuntimeError(f"Tool loop exceeded {max_tool_rounds} rounds")
 
-    def messages(self, **kwargs) -> Any:
+    def messages(self, **kwargs: Any) -> Any:
         return self._client.v2_session_messages(self.id, **kwargs)
 
-    def context(self, **kwargs) -> list[SessionMessage]:
-        return self._client.v2_session_context(self.id, **kwargs)
+    def context(self, **kwargs: Any) -> list[SessionMessage]:
+        return cast("list[SessionMessage]", self._client.v2_session_context(self.id, **kwargs))
 
     def compact(self) -> Any:
         return self._client.v2_session_compact(self.id)
@@ -156,7 +156,7 @@ class Session:
     def abort(self) -> Any:
         return self._client.session_abort(self.id)
 
-    def fork(self, **kwargs) -> Any:
+    def fork(self, **kwargs: Any) -> Any:
         return self._client.session_fork(self.id, **kwargs)
 
     def diff(self) -> Any:

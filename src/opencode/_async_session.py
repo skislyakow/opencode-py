@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, cast
 
 from opencode._async_client import AsyncOpendcodeClient
 from opencode._models import SessionMessage
@@ -43,7 +43,9 @@ class AsyncSession:
             for p in parts_list:
                 ptype = p.get("type", "")
                 if ptype in ("text", "reasoning", "tool"):
-                    text_parts.append({"type": ptype, "text": p.get("text", "")})
+                    text_parts.append(
+                        {"type": ptype, "text": p.get("text", "")}
+                    )
             msg: dict[str, Any] = {
                 "id": info.get("id", ""),
                 "type": "assistant",
@@ -53,9 +55,9 @@ class AsyncSession:
             }
             if structured is not None:
                 msg["structured"] = structured
-            return msg
+            return cast(SessionMessage, msg)
 
-        return result
+        return cast(SessionMessage, result)
 
     async def ask(
         self,
@@ -83,7 +85,7 @@ class AsyncSession:
 
             result = await self._client.session_send(self.id, body)
             if not isinstance(result, dict):
-                return result
+                return cast(SessionMessage, result)
 
             parts_list = result.get("parts", [])
             info = result.get("info", {})
@@ -125,7 +127,9 @@ class AsyncSession:
             for p in parts_list:
                 ptype = p.get("type", "")
                 if ptype in ("text", "reasoning", "tool"):
-                    text_parts.append({"type": ptype, "text": p.get("text", "")})
+                    text_parts.append(
+                        {"type": ptype, "text": p.get("text", "")}
+                    )
             msg: dict[str, Any] = {
                 "id": info.get("id", ""),
                 "type": "assistant",
@@ -136,15 +140,18 @@ class AsyncSession:
             structured = result.get("structured") or info.get("structured")
             if structured is not None:
                 msg["structured"] = structured
-            return msg
+            return cast(SessionMessage, msg)
 
         raise RuntimeError(f"Tool loop exceeded {max_tool_rounds} rounds")
 
-    async def messages(self, **kwargs) -> Any:
+    async def messages(self, **kwargs: Any) -> Any:
         return await self._client.v2_session_messages(self.id, **kwargs)
 
-    async def context(self, **kwargs) -> list[SessionMessage]:
-        return await self._client.v2_session_context(self.id, **kwargs)
+    async def context(self, **kwargs: Any) -> list[SessionMessage]:
+        return cast(
+            "list[SessionMessage]",
+            await self._client.v2_session_context(self.id, **kwargs),
+        )
 
     async def compact(self) -> Any:
         return await self._client.v2_session_compact(self.id)
@@ -152,7 +159,7 @@ class AsyncSession:
     async def abort(self) -> Any:
         return await self._client.session_abort(self.id)
 
-    async def fork(self, **kwargs) -> Any:
+    async def fork(self, **kwargs: Any) -> Any:
         return await self._client.session_fork(self.id, **kwargs)
 
     async def diff(self) -> Any:
