@@ -4,6 +4,7 @@ from typing import Any, cast
 
 from opencode._client import OpencodeClient
 from opencode._models import SessionMessage
+from opencode._response_models import V1SessionResponse
 from opencode._tools import ToolExecutor
 
 
@@ -36,28 +37,24 @@ class Session:
         # Use V1 sync prompt (POST /session/:id/message)
         result = self._client.session_send(self.id, body)
 
-        if isinstance(result, dict):
-            parts_list = result.get("parts", [])
-            info = result.get("info", {})
-            structured = result.get("structured") or info.get("structured")
-            # Convert parts to V2-like SessionMessage format
-            text_parts: list[dict[str, Any]] = []
-            for p in parts_list:
-                ptype = p.get("type", "")
-                if ptype in ("text", "reasoning", "tool"):
-                    text_parts.append({"type": ptype, "text": p.get("text", "")})
-            msg: dict[str, Any] = {
-                "id": info.get("id", ""),
-                "type": "assistant",
-                "content": text_parts,
-                "model": info.get("model"),
-                "time": info.get("time", {}),
-            }
-            if structured is not None:
-                msg["structured"] = structured
-            return cast(SessionMessage, msg)
-
-        return cast(SessionMessage, result)
+        parts_list = result.parts if isinstance(result, V1SessionResponse) else result.get("parts", [])
+        info = result.info if isinstance(result, V1SessionResponse) else result.get("info", {})
+        structured = getattr(result, "structured", None) or info.get("structured")
+        text_parts: list[dict[str, Any]] = []
+        for p in parts_list:
+            ptype = p.get("type", "")
+            if ptype in ("text", "reasoning", "tool"):
+                text_parts.append({"type": ptype, "text": p.get("text", "")})
+        msg: dict[str, Any] = {
+            "id": info.get("id", ""),
+            "type": "assistant",
+            "content": text_parts,
+            "model": info.get("model"),
+            "time": info.get("time", {}),
+        }
+        if structured is not None:
+            msg["structured"] = structured
+        return cast(SessionMessage, msg)
 
     def ask(
         self,
@@ -84,11 +81,11 @@ class Session:
                 body["format"] = format
 
             result = self._client.session_send(self.id, body)
-            if not isinstance(result, dict):
+            if not isinstance(result, V1SessionResponse) and not isinstance(result, dict):
                 return cast(SessionMessage, result)
 
-            parts_list = result.get("parts", [])
-            info = result.get("info", {})
+            parts_list = result.parts if isinstance(result, V1SessionResponse) else result.get("parts", [])
+            info = result.info if isinstance(result, V1SessionResponse) else result.get("info", {})
 
             tool_uses = [p for p in parts_list if p.get("type") == "tool-use"]
             if tool_uses:
@@ -137,7 +134,7 @@ class Session:
                 "model": info.get("model"),
                 "time": info.get("time", {}),
             }
-            structured = result.get("structured") or info.get("structured")
+            structured = getattr(result, "structured", None) or info.get("structured")
             if structured is not None:
                 msg["structured"] = structured
             return cast(SessionMessage, msg)

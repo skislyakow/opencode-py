@@ -1,10 +1,40 @@
 from __future__ import annotations
 
-from typing import Any
+import asyncio
+import random
+from typing import Any, TypeVar, cast
 
 import httpx
 
-from opencode._errors import ApiError
+from opencode._errors import (
+    APIStatusError,
+    APITimeoutError,
+    AuthenticationError,
+    BadRequestError,
+    ConflictError,
+    InternalServerError,
+    NotFoundError,
+    OpencodeError,
+    PermissionDeniedError,
+    RateLimitError,
+    UnprocessableEntityError,
+)
+from opencode._response_models import (
+    FileContentResponse,
+    HealthResponse,
+    ProviderResponse,
+    SessionResponse,
+    V1SessionResponse,
+)
+from opencode._logs import logger
+from opencode._types import NOT_GIVEN, NotGiven, is_given
+
+_T = TypeVar("_T")
+
+DEFAULT_MAX_RETRIES = 2
+INITIAL_RETRY_DELAY = 0.5
+MAX_RETRY_DELAY = 8.0
+RETRYABLE_STATUS_CODES = {408, 409, 429}
 
 
 class AsyncOpendcodeClient:
@@ -15,11 +45,14 @@ class AsyncOpendcodeClient:
         directory: str | None = None,
         workspace: str | None = None,
         timeout: float = 300.0,
+        max_retries: int = DEFAULT_MAX_RETRIES,
         httpx_client: httpx.AsyncClient | None = None,
     ):
         self.base_url = base_url.rstrip("/")
         self.directory = directory
         self.workspace = workspace
+        self._timeout = timeout
+        self._max_retries = max_retries
         self._client = httpx_client or httpx.AsyncClient(timeout=httpx.Timeout(timeout))
 
     # ------------------------------------------------------------------
@@ -40,7 +73,85 @@ class AsyncOpendcodeClient:
             params["workspace"] = self.workspace
         return params
 
-    def _handle(self, response: httpx.Response) -> Any:
+    @staticmethod
+    def _should_retry(response: httpx.Response | None = None, exc: Exception | None = None) -> bool:
+        if response is not None:
+            if response.status_code in RETRYABLE_STATUS_CODES or response.status_code >= 500:
+                return True
+        if isinstance(exc, httpx.TimeoutException):
+            return True
+        return False
+
+    @staticmethod
+    def _retry_interval(attempt: int, response: httpx.Response | None = None) -> float:
+        if response is not None:
+            retry_after = response.headers.get("Retry-After") or response.headers.get(
+                "retry-after-ms"
+            )
+            if retry_after:
+                try:
+                    return float(retry_after) / 1000 if "ms" in retry_after else float(retry_after)
+                except ValueError:
+                    pass
+        delay = min(INITIAL_RETRY_DELAY * pow(2.0, attempt), MAX_RETRY_DELAY)
+        return delay * (1 - 0.25 * random.random())
+
+    @staticmethod
+    def _make_status_error(
+        message: str,
+        *,
+        body: object = None,
+        response: httpx.Response,
+    ) -> APIStatusError:
+        status = response.status_code
+        if status == 400:
+            return BadRequestError(message=message, body=body, response=response, status_code=status)
+        if status == 401:
+            return AuthenticationError(
+                message=message, body=body, response=response, status_code=status
+            )
+        if status == 403:
+            return PermissionDeniedError(
+                message=message, body=body, response=response, status_code=status
+            )
+        if status == 404:
+            return NotFoundError(message=message, body=body, response=response, status_code=status)
+        if status == 409:
+            return ConflictError(message=message, body=body, response=response, status_code=status)
+        if status == 422:
+            return UnprocessableEntityError(
+                message=message, body=body, response=response, status_code=status
+            )
+        if status == 429:
+            return RateLimitError(message=message, body=body, response=response, status_code=status)
+        if status >= 500:
+            return InternalServerError(
+                message=message, body=body, response=response, status_code=status
+            )
+        return APIStatusError(
+            message=message, body=body, response=response, status_code=status
+        )
+
+    def _construct_type(self, model_class: type[_T] | None, data: Any) -> _T | Any:
+        if model_class is None:
+            return data
+        if isinstance(data, list):
+            return [self._construct_type(model_class, item) for item in data]
+        if isinstance(data, dict):
+            return cast(_T, model_class.model_validate(data))
+        if data is None:
+            return None
+        return data
+
+    # ------------------------------------------------------------------
+    # Request handling
+    # ------------------------------------------------------------------
+
+    def _handle(
+        self,
+        response: httpx.Response,
+        cast_to: type[_T] | None = None,
+    ) -> Any:
         if response.is_success:
             if response.status_code == 204:
                 return None
@@ -49,8 +160,12 @@ class AsyncOpendcodeClient:
                 return response
             if "text/" in ct:
                 return response.text
-            return response.json()
-        body = None
+            json_data = response.json()
+            if cast_to is not None:
+                return self._construct_type(cast_to, json_data)
+            return json_data
+
+        body: Any = None
         try:
             body = response.json()
         except Exception:
@@ -60,10 +175,10 @@ class AsyncOpendcodeClient:
             message = body.get("message") or body.get("error") or str(body)
         elif isinstance(body, str):
             message = body
-        raise ApiError(
+        raise self._make_status_error(
             message or f"HTTP {response.status_code}: {response.reason_phrase}",
-            status=response.status_code,
             body=body,
+            response=response,
         )
 
     async def _request(
@@ -74,14 +189,61 @@ class AsyncOpendcodeClient:
         params: dict[str, Any] | None = None,
         json_body: Any = None,
         headers: dict[str, str] | None = None,
+        extra_headers: dict[str, str] | None = None,
+        extra_query: dict[str, str] | None = None,
+        extra_body: dict[str, Any] | None = None,
+        cast_to: type[_T] | None = None,
     ) -> Any:
         url = self._build_url(path)
         params = self._merge_params(params)
+        if extra_query:
+            params = {**params, **extra_query}
+
         hdrs = {"Content-Type": "application/json", **(headers or {})}
-        response = await self._client.request(
-            method, url, params=params, json=json_body, headers=hdrs
-        )
-        return self._handle(response)
+        if extra_headers:
+            hdrs = {**hdrs, **extra_headers}
+
+        body = json_body
+        if extra_body:
+            if isinstance(body, dict) and isinstance(extra_body, dict):
+                body = {**body, **extra_body}
+            else:
+                body = extra_body
+
+        logger.debug("HTTP Request: %s %s params=%s", method, url, params)
+
+        last_exc: Exception | None = None
+        for attempt in range(self._max_retries + 1):
+            try:
+                response = await self._client.request(
+                    method, url, params=params, json=body, headers=hdrs
+                )
+            except httpx.TimeoutException as exc:
+                last_exc = exc
+                if attempt < self._max_retries:
+                    delay = self._retry_interval(attempt)
+                    logger.debug("Retry %d after timeout, sleeping %.2fs", attempt + 1, delay)
+                    await asyncio.sleep(delay)
+                    continue
+                raise APITimeoutError(request=exc.request) from exc
+
+            if not response.is_success and attempt < self._max_retries:
+                if self._should_retry(response=response):
+                    delay = self._retry_interval(attempt, response)
+                    logger.debug(
+                        "Retry %d after HTTP %d, sleeping %.2fs",
+                        attempt + 1,
+                        response.status_code,
+                        delay,
+                    )
+                    await asyncio.sleep(delay)
+                    continue
+
+            return self._handle(response, cast_to=cast_to)
+
+        if last_exc:
+            raise APITimeoutError(request=last_exc.request) from last_exc
+        raise OpencodeError("Unexpected retry exhaustion")
 
     async def _request_stream(
         self,
@@ -101,11 +263,37 @@ class AsyncOpendcodeClient:
         return await self._client.send(request, stream=True)
 
     # ------------------------------------------------------------------
+    # copy / with_options
+    # ------------------------------------------------------------------
+
+    def copy(
+        self,
+        *,
+        base_url: str | NotGiven = NOT_GIVEN,
+        timeout: float | NotGiven = NOT_GIVEN,
+        max_retries: int | NotGiven = NOT_GIVEN,
+        directory: str | None | NotGiven = NOT_GIVEN,
+        workspace: str | None | NotGiven = NOT_GIVEN,
+        httpx_client: httpx.AsyncClient | None | NotGiven = NOT_GIVEN,
+    ) -> AsyncOpendcodeClient:
+        return AsyncOpendcodeClient(
+            base_url=self.base_url if is_given(base_url) else cast(str, base_url),
+            timeout=self._timeout if is_given(timeout) else cast(float, timeout),
+            max_retries=self._max_retries if is_given(max_retries) else cast(int, max_retries),
+            directory=self.directory if is_given(directory) else cast(str, directory),
+            workspace=self.workspace if is_given(workspace) else cast(str, workspace),
+            httpx_client=self._client if is_given(httpx_client) else cast(httpx.AsyncClient, httpx_client),
+        )
+
+    def with_options(self, **kwargs: Any) -> AsyncOpendcodeClient:
+        return self.copy(**kwargs)
+
+    # ------------------------------------------------------------------
     # Global
     # ------------------------------------------------------------------
 
-    async def health(self) -> Any:
-        return await self._request("GET", "/global/health")
+    async def health(self) -> HealthResponse:
+        return await self._request("GET", "/global/health", cast_to=HealthResponse)
 
     async def global_event(self) -> httpx.Response:
         return await self._request_stream("GET", "/global/event")
@@ -139,11 +327,11 @@ class AsyncOpendcodeClient:
     # Session
     # ------------------------------------------------------------------
 
-    async def session_create(self, **kwargs: Any) -> Any:
-        return await self._request("POST", "/session", json_body=kwargs or None)
+    async def session_create(self, **kwargs: Any) -> SessionResponse:
+        return await self._request("POST", "/session", json_body=kwargs or None, cast_to=SessionResponse)
 
-    async def session_get(self, session_id: str) -> Any:
-        return await self._request("GET", f"/session/{session_id}")
+    async def session_get(self, session_id: str) -> SessionResponse:
+        return await self._request("GET", f"/session/{session_id}", cast_to=SessionResponse)
 
     async def session_list(self, **kwargs: Any) -> Any:
         return await self._request("GET", "/session", params=kwargs)
@@ -195,7 +383,9 @@ class AsyncOpendcodeClient:
 
     async def session_command(self, session_id: str, command: str, **kwargs: Any) -> Any:
         return await self._request(
-            "POST", f"/session/{session_id}/command", json_body={"command": command, **kwargs}
+            "POST",
+            f"/session/{session_id}/command",
+            json_body={"command": command, **kwargs},
         )
 
     async def session_shell(self, session_id: str, command: str) -> Any:
@@ -210,8 +400,8 @@ class AsyncOpendcodeClient:
     async def v2_session_list(self, **kwargs: Any) -> Any:
         return await self._request("GET", "/api/session", params=kwargs)
 
-    async def session_send(self, session_id: str, body: Any) -> Any:
-        return await self._request("POST", f"/session/{session_id}/message", json_body=body)
+    async def session_send(self, session_id: str, body: Any) -> V1SessionResponse:
+        return await self._request("POST", f"/session/{session_id}/message", json_body=body, cast_to=V1SessionResponse)
 
     async def v2_session_prompt(
         self, session_id: str, prompt: Any, *, delivery: str = "queue", **kwargs: Any
@@ -264,8 +454,8 @@ class AsyncOpendcodeClient:
     # File
     # ------------------------------------------------------------------
 
-    async def file_read(self, path: str, **kwargs: Any) -> Any:
-        return await self._request("GET", "/file/content", params={"path": path, **kwargs})
+    async def file_read(self, path: str, **kwargs: Any) -> FileContentResponse:
+        return await self._request("GET", "/file/content", params={"path": path, **kwargs}, cast_to=FileContentResponse)
 
     async def file_list(self, path: str, **kwargs: Any) -> Any:
         return await self._request("GET", "/file", params={"path": path, **kwargs})
@@ -362,7 +552,9 @@ class AsyncOpendcodeClient:
         return await self._request("GET", "/permission", params=kwargs)
 
     async def permission_reply(self, permission_id: str, **kwargs: Any) -> Any:
-        return await self._request("POST", f"/permission/{permission_id}", json_body=kwargs or None)
+        return await self._request(
+            "POST", f"/permission/{permission_id}", json_body=kwargs or None
+        )
 
     # ------------------------------------------------------------------
     # Question
@@ -372,7 +564,9 @@ class AsyncOpendcodeClient:
         return await self._request("GET", "/question", params=kwargs)
 
     async def question_reply(self, question_id: str, answer: Any) -> Any:
-        return await self._request("POST", f"/question/{question_id}", json_body={"answer": answer})
+        return await self._request(
+            "POST", f"/question/{question_id}", json_body={"answer": answer}
+        )
 
     async def question_reject(self, question_id: str) -> Any:
         return await self._request("DELETE", f"/question/{question_id}")
@@ -457,7 +651,9 @@ class AsyncOpendcodeClient:
         return await self._request("DELETE", "/experimental/worktree", params=kwargs)
 
     async def worktree_reset(self, **kwargs: Any) -> Any:
-        return await self._request("POST", "/experimental/worktree/reset", json_body=kwargs or None)
+        return await self._request(
+            "POST", "/experimental/worktree/reset", json_body=kwargs or None
+        )
 
     # ------------------------------------------------------------------
     # Workspace (experimental)

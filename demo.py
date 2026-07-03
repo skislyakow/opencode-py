@@ -20,7 +20,7 @@ client = OpencodeClient(base_url=server.url)
 
 # 2. Server info
 h = client.health()
-print(f"\n[2] Server: version={h['version']}, healthy={h['healthy']}")
+print(f"\n[2] Server: version={h.version}, healthy={h.healthy}")
 
 # 3. Current project
 pj = client.project_current()
@@ -29,7 +29,7 @@ print(f"\n[3] Project: id={pj['id'][:12]}... vcs={pj['vcs']}")
 # 4. Session management
 print("\n[4] Creating session...")
 ses = client.session_create()
-sid = ses["id"]
+sid = ses.id
 print(f"    Session ID: {sid}")
 
 # 5. File read

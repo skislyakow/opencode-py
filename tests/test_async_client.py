@@ -3,7 +3,8 @@ from __future__ import annotations
 import httpx
 import pytest
 
-from opencode import ApiError, AsyncOpendcodeClient
+from opencode import APIError, AsyncOpendcodeClient
+from opencode._response_models import FileContentResponse, HealthResponse, SessionResponse
 
 
 @pytest.mark.asyncio
@@ -36,7 +37,8 @@ async def test_health_success() -> None:
         ),
     )
     result = await client.health()
-    assert result == {"ok": True}
+    assert isinstance(result, HealthResponse)
+    assert result.ok is True
 
 
 @pytest.mark.asyncio
@@ -49,7 +51,7 @@ async def test_health_error() -> None:
             )
         ),
     )
-    with pytest.raises(ApiError) as exc:
+    with pytest.raises(APIError) as exc:
         await client.health()
     assert exc.value.status == 500
     assert "internal error" in str(exc.value)
@@ -110,7 +112,8 @@ async def test_session_create() -> None:
         ),
     )
     result = await client.session_create()
-    assert result == {"id": "ses_1"}
+    assert isinstance(result, SessionResponse)
+    assert result.id == "ses_1"
 
 
 @pytest.mark.asyncio
@@ -124,4 +127,5 @@ async def test_file_read() -> None:
         ),
     )
     result = await client.file_read("/path/to/file.py")
-    assert result == {"content": "print('hello')"}
+    assert isinstance(result, FileContentResponse)
+    assert result.content == "print('hello')"

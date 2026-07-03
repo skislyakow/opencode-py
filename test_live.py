@@ -20,6 +20,8 @@ def check(num: int, label: str, fn):
         )
         if isinstance(result, dict):
             pretty = f"dict keys={list(result.keys())[:5]}"
+        if hasattr(result, "model_dump"):
+            pretty = f"{type(result).__name__} data"
         if isinstance(result, list):
             pretty = f"list len={len(result)}"
         results.append(f"[{num:>2}] {label}: OK — {pretty}")
@@ -32,11 +34,11 @@ check(1, "Health", lambda: client.health().get("version"))
 check(2, "Global config", lambda: client.global_config_get())
 check(3, "Config", lambda: client.config_get())
 
-check(4, "Session create", lambda: client.session_create()["id"])
+check(4, "Session create", lambda: client.session_create().id)
 ses = client.session_create()
-sid = ses["id"]
+sid = ses.id
 
-check(5, "Session get", lambda: client.session_get(sid).get("id"))
+check(5, "Session get", lambda: client.session_get(sid).id)
 check(6, "Session list", lambda: client.session_list())
 check(7, "File list", lambda: client.file_list("."))
 check(8, "Path", lambda: client.path_get().get("worktree", "")[:40])

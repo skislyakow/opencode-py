@@ -8,6 +8,7 @@
   <a href="https://github.com/skislyakow/opencode-py/actions/workflows/test.yml"><img src="https://github.com/skislyakow/opencode-py/actions/workflows/test.yml/badge.svg" alt="Tests"></a>
   <img src="https://img.shields.io/badge/build-hatchling-4051b5" alt="Hatchling">
   <img src="https://img.shields.io/badge/http-httpx-blue" alt="httpx">
+  <img src="https://img.shields.io/badge/models-pydantic-E92063" alt="pydantic">
 </p>
 
 Python SDK for [Opencode](https://opencode.ai) — the open source AI coding agent.
@@ -98,8 +99,34 @@ with Opencode() as ai:
     diff = ai.client.vcs_diff("HEAD~3")
     config = ai.client.config_get()
     session = ai.client.session_create()
-    ai.client.v2_session_prompt(session["id"], {"text": "Hello"})
+    ai.client.v2_session_prompt(session.id, {"text": "Hello"})
 ```
+
+All client methods return typed Pydantic models — IDE autocomplete, validation, `.model_dump()`, `.model_dump_json()`.
+
+### Retry & error handling
+
+```python
+from opencode import OpencodeClient, RateLimitError, InternalServerError
+
+client = OpencodeClient(max_retries=3)  # exponential backoff with jitter
+
+try:
+    health = client.health()
+    print(health.version)
+except RateLimitError:
+    print("too many requests — retried but failed")
+except InternalServerError:
+    print("server error")
+```
+
+### Debug logging
+
+```bash
+OPENCODE_LOG=debug python my_script.py
+```
+
+Shows all HTTP requests/responses with timing.
 
 ### Web UI (zero dependencies)
 
@@ -167,7 +194,7 @@ from opencode import AsyncOpendcodeClient
 
 async with AsyncOpendcodeClient() as client:
     health = await client.health()
-    print(health)
+    print(health.version)  # typed Pydantic model
 ```
 
 ## Development

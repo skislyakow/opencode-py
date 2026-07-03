@@ -4,9 +4,9 @@
 
 Python SDK for [Opencode](https://opencode.ai) — a PyPI package (`opencode-py`) that launches an `opencode serve` subprocess and provides both high-level and low-level APIs.
 
-**Current version**: 0.1.1
+**Current version**: 0.2.0-dev
 **Python**: >=3.10
-**Dependencies**: only `httpx>=0.27.0`
+**Dependencies**: `httpx>=0.27.0`, `pydantic>=2.0.0`, `typing-extensions>=4.6.0`
 **Build**: hatchling
 
 ## Repository
@@ -23,20 +23,24 @@ Python SDK for [Opencode](https://opencode.ai) — a PyPI package (`opencode-py`
 ```
 opencode-py/
 ├── src/opencode/
-│   ├── __init__.py            # Public API exports
+│   ├── __init__.py            # Public API exports, calls setup_logging()
 │   ├── __main__.py            # python -m opencode "question"
 │   ├── _opencode.py           # Opencode class + opencode() convenience fn
 │   ├── _async_opencode.py     # AsyncOpendcode class + async_opencode()
-│   ├── _client.py             # OpencodeClient — sync REST (528 lines)
-│   ├── _async_client.py       # AsyncOpendcodeClient — async REST
+│   ├── _client.py             # OpencodeClient — sync REST (typed models, retry)
+│   ├── _async_client.py       # AsyncOpendcodeClient — async REST (typed models, retry)
 │   ├── _server.py             # OpencodeServer — subprocess lifecycle
 │   ├── _session.py            # Session — sync conversation management
 │   ├── _async_session.py      # AsyncSession — async conversation management
 │   ├── _binary.py             # Binary find in PATH + GitHub download
 │   ├── _process.py            # Cross-platform process termination
-│   ├── _models.py             # TypedDict types (OutputFormatJsonSchema, etc.)
+│   ├── _models.py             # TypedDict types (SessionMessage, etc.)
+│   ├── _response_models.py    # Pydantic BaseModel response types (all endpoints)
+│   ├── _types.py              # NotGiven sentinel
+│   ├── _logs.py               # Logging via OPENCODE_LOG env var
 │   ├── _tools.py              # ToolExecutor — run tools locally with permissions
-│   └── _errors.py             # OpencodeError, ApiError, BinaryNotFound
+│   ├── _errors.py             # Typed exception hierarchy (10+ classes)
+│   └── py.typed               # PEP 561 marker for type checkers
 ├── tests/
 │   ├── test_client.py         # 11 unit tests (sync, httpx MockTransport)
 │   ├── test_async_client.py   # 11 unit tests (async, httpx MockTransport)
@@ -90,20 +94,26 @@ fb4b884 feat: initial Python SDK for Opencode
 - 31/31 unit tests passing (sync + async)
 - Python 3.10 compatibility (`NotRequired` via `typing_extensions`)
 - `live.py` (sync), `live_async.py`, `live_streaming.py` — interactive dialog scripts with `atexit` cleanup
+- **Pydantic response models** — `HealthResponse`, `SessionResponse`, `FileContentResponse`, `ProviderResponse`, `V1SessionResponse` and more
+- **Retry logic** — exponential backoff with jitter, retries on 408/409/429/5xx and timeouts
+- **Typed error hierarchy** — `APIStatusError` → `BadRequestError`, `RateLimitError`, `InternalServerError`, etc.
+- **Logging** — `OPENCODE_LOG=debug` enables httpx debug logging
+- **`py.typed` marker** — PEP 561 compliance for type checkers
+- **`copy()`/`with_options()`** — immutable client cloning with overrides
 
 ### Known issues to fix
 
 1. **Delivery enum mismatch** — npm v1.17.13 uses `"steer"/"queue"`, but upstream `dev` branch source also uses `"steer"/"queue"`. The local clone (`C:\Code\opencode`) has been modified to use `"immediate"/"deferred"` but this is NOT yet upstream. When upstream switches, update `_client.py:delivery="queue"` and `_async_client.py` to `"deferred"`. Run `scripts/check-upstream.py` to monitor.
 
-2. ~~**Config format** — `Opencode(config={"model": "anthropic/..."})` fails because config expects `provider.{id}.options.apiKey` format.~~ **PARTIALLY RESOLVED**: The free `opencode` provider models work without API keys, but `OPENCODE_CONFIG_CONTENT={"model": "opencode/big-pickle"}` crashes the server with "ServeError" in v1.17.13. The model should be specified in the V1 prompt request body instead of server config. `Opencode` class works by passing `model` per-request, not via server config. **FIXED**: `opencode(model=...)` no longer puts model in server config — passes it per-request.
+2. ~~**Config format** — `Opencode(config={"model": "anthropic/..."})` fails because config expects `provider.{id}.options.apiKey` format.~~ **FIXED**: `opencode(model=...)` no longer puts model in server config — passes it per-request.
 
-3. **`v2_session_wait` broken** — `POST /api/session/{sessionID}/wait` returns "Session wait is not available yet" in v1.17.13. **FIXED**: `Session.prompt()` now polls `v2_session_context()` until an assistant message appears (see `_session.py:_poll_response`).
+3. **`v2_session_wait` broken** — `POST /api/session/{sessionID}/wait` returns "Session wait is not available yet" in v1.17.13. **FIXED**: `Session.prompt()` now polls `v2_session_context()` until an assistant message appears.
 
-4. ~~**No async support** — `OpencodeClient` is sync-only. `httpx.AsyncClient` not wired up.~~ **DONE**: `AsyncOpendcodeClient`, `AsyncSession`, `AsyncOpendcode`, `async_opencode()` all implemented.
+4. ~~**No async support** — `OpencodeClient` is sync-only.~~ **DONE**: Full async support.
 
 5. **Streaming** — `ask_stream()` reads SSE events via `/event` but delta format may differ between server versions.
 
-6. ~~**No upstream monitoring** — No script to compare local `openapi.json` with upstream.~~ **DONE**: `scripts/check-upstream.py` fetches upstream, checks delivery enum + structured output.
+6. ~~**No upstream monitoring**~~ **DONE**: `scripts/check-upstream.py` fetches upstream.
 
 ## Architecture
 
@@ -280,6 +290,21 @@ python web/server.py
 ### Step G: Upstream monitoring ✅ DONE
 1. `scripts/check-upstream.py` checks delivery enum + structured output ✅
 
+## Next Steps
+
+### Step H: Complete typed model coverage
+1. Add `cast_to` to remaining client methods (vcs, config, project, etc.)
+2. Add `with_raw_response` pattern for raw HTTP access
+3. Consider `model_construct()` for faster deserialization (skip validation)
+
+### Step I: Release v0.2.0
+1. Bump version in `pyproject.toml` to `0.2.0`
+2. Publish to PyPI via Trusted Publishing
+
+### Step J: Compare with official SDK
+1. Evaluate `opencode-ai` (official Stainless SDK) for low-level layer
+2. Consider using their client as base with our high-level wrapper
+
 ## Style Guide
 
 - Keep in one function unless composable/reusable
@@ -288,7 +313,7 @@ python web/server.py
 - Prefer httpx over urllib/requests (HTTP client), except for `_binary.py` which uses `urllib.request` for download (stdlib, no extra deps)
 - Method naming: snake_case, category prefix (e.g., `v2_session_*`, `file_*`, `config_*`)
 - Type hints everywhere
-- Avoid `Any` where possible — use `TypedDict` from `_models.py`
+- Avoid `Any` where possible — use Pydantic models from `_response_models.py`
 
 ## Commit Convention
 

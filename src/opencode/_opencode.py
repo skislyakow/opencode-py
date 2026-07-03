@@ -117,7 +117,7 @@ class Opencode:
         if agent:
             kwargs["agent"] = agent
         raw = self.client.session_create(**kwargs)
-        sid = raw["id"]
+        sid = raw.id
         return Session(self.client, sid)
 
     def _resolve_model(self) -> dict[str, str] | None:

@@ -99,7 +99,7 @@ class AsyncOpendcode:
         if agent:
             kwargs["agent"] = agent
         raw = await self.client.session_create(**kwargs)
-        sid = raw["id"]
+        sid = raw.id
         return AsyncSession(self.client, sid)
 
     async def ask(

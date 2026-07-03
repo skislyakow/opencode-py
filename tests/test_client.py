@@ -3,7 +3,8 @@ from __future__ import annotations
 import httpx
 import pytest
 
-from opencode import ApiError, OpencodeClient
+from opencode import APIError, OpencodeClient
+from opencode._response_models import FileContentResponse, HealthResponse, SessionResponse
 
 
 def test_create_client_defaults() -> None:
@@ -33,7 +34,8 @@ def test_health_success() -> None:
         ),
     )
     result = client.health()
-    assert result == {"ok": True}
+    assert isinstance(result, HealthResponse)
+    assert result.ok is True
 
 
 def test_health_error() -> None:
@@ -45,7 +47,7 @@ def test_health_error() -> None:
             )
         ),
     )
-    with pytest.raises(ApiError) as exc:
+    with pytest.raises(APIError) as exc:
         client.health()
     assert exc.value.status == 500
     assert "internal error" in str(exc.value)
@@ -98,7 +100,8 @@ def test_session_create() -> None:
         ),
     )
     result = client.session_create()
-    assert result == {"id": "ses_1"}
+    assert isinstance(result, SessionResponse)
+    assert result.id == "ses_1"
 
 
 def test_file_read() -> None:
@@ -111,4 +114,5 @@ def test_file_read() -> None:
         ),
     )
     result = client.file_read("/path/to/file.py")
-    assert result == {"content": "print('hello')"}
+    assert isinstance(result, FileContentResponse)
+    assert result.content == "print('hello')"
