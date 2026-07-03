@@ -3,8 +3,8 @@ from opencode._async_opencode import AsyncOpendcode, async_opencode
 from opencode._async_session import AsyncSession
 from opencode._client import OpencodeClient
 from opencode._errors import (
-    APIError,
     APIConnectionError,
+    APIError,
     APIResponseValidationError,
     APIStatusError,
     APITimeoutError,

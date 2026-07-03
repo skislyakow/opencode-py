@@ -37,7 +37,9 @@ class Session:
         # Use V1 sync prompt (POST /session/:id/message)
         result = self._client.session_send(self.id, body)
 
-        parts_list = result.parts if isinstance(result, V1SessionResponse) else result.get("parts", [])
+        parts_list = (
+            result.parts if isinstance(result, V1SessionResponse) else result.get("parts", [])
+        )
         info = result.info if isinstance(result, V1SessionResponse) else result.get("info", {})
         structured = getattr(result, "structured", None) or info.get("structured")
         text_parts: list[dict[str, Any]] = []
@@ -84,7 +86,9 @@ class Session:
             if not isinstance(result, V1SessionResponse) and not isinstance(result, dict):
                 return cast(SessionMessage, result)
 
-            parts_list = result.parts if isinstance(result, V1SessionResponse) else result.get("parts", [])
+            parts_list = (
+                result.parts if isinstance(result, V1SessionResponse) else result.get("parts", [])
+            )
             info = result.info if isinstance(result, V1SessionResponse) else result.get("info", {})
 
             tool_uses = [p for p in parts_list if p.get("type") == "tool-use"]

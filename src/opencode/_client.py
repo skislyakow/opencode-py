@@ -2,12 +2,11 @@ from __future__ import annotations
 
 import random
 import time
-from typing import Any, Generic, TypeVar, cast
+from typing import Any, TypeVar, cast
 
 import httpx
 
 from opencode._errors import (
-    APIError,
     APIStatusError,
     APITimeoutError,
     AuthenticationError,
@@ -20,15 +19,14 @@ from opencode._errors import (
     RateLimitError,
     UnprocessableEntityError,
 )
+from opencode._logs import logger
 from opencode._response_models import (
     FileContentResponse,
     HealthResponse,
-    ProviderResponse,
     SessionResponse,
     V1SessionResponse,
 )
 from opencode._types import NOT_GIVEN, NotGiven, is_given
-from opencode._logs import logger
 
 _T = TypeVar("_T")
 
@@ -106,7 +104,9 @@ class OpencodeClient:
     ) -> APIStatusError:
         status = response.status_code
         if status == 400:
-            return BadRequestError(message=message, body=body, response=response, status_code=status)
+            return BadRequestError(
+                message=message, body=body, response=response, status_code=status
+            )
         if status == 401:
             return AuthenticationError(
                 message=message, body=body, response=response, status_code=status
@@ -283,7 +283,9 @@ class OpencodeClient:
             max_retries=self._max_retries if is_given(max_retries) else cast(int, max_retries),
             directory=self.directory if is_given(directory) else cast(str, directory),
             workspace=self.workspace if is_given(workspace) else cast(str, workspace),
-            httpx_client=self._client if is_given(httpx_client) else cast(httpx.Client, httpx_client),
+            httpx_client=(
+                self._client if is_given(httpx_client) else cast(httpx.Client, httpx_client)
+            ),
         )
 
     def with_options(self, **kwargs: Any) -> OpencodeClient:
@@ -402,7 +404,9 @@ class OpencodeClient:
         return self._request("GET", "/api/session", params=kwargs)
 
     def session_send(self, session_id: str, body: Any) -> V1SessionResponse:
-        return self._request("POST", f"/session/{session_id}/message", json_body=body, cast_to=V1SessionResponse)
+        return self._request(
+            "POST", f"/session/{session_id}/message", json_body=body, cast_to=V1SessionResponse
+        )
 
     def v2_session_prompt(
         self, session_id: str, prompt: Any, *, delivery: str = "queue", **kwargs: Any
@@ -456,7 +460,9 @@ class OpencodeClient:
     # ------------------------------------------------------------------
 
     def file_read(self, path: str, **kwargs: Any) -> FileContentResponse:
-        return self._request("GET", "/file/content", params={"path": path, **kwargs}, cast_to=FileContentResponse)
+        return self._request(
+            "GET", "/file/content", params={"path": path, **kwargs}, cast_to=FileContentResponse
+        )
 
     def file_list(self, path: str, **kwargs: Any) -> Any:
         return self._request("GET", "/file", params={"path": path, **kwargs})
