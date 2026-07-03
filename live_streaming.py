@@ -1,6 +1,7 @@
 import atexit
+from typing import cast
 
-from opencode import Opencode, _opencode
+from opencode import Opencode, Session, _opencode
 
 _state = _opencode._opencode_state
 
@@ -35,7 +36,7 @@ while True:
         session = ai.create_session()
         _state["session"] = session
     else:
-        session = _state.get("session")
+        session = cast(Session, _state.get("session"))
 
     for chunk in ai.ask_stream(prompt, session=session):
         print(chunk, end="", flush=True)
