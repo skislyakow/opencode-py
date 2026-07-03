@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Any, Dict, List, Optional, Sequence
+from typing import Any
 
 import httpx
 
@@ -12,10 +12,10 @@ class OpencodeClient:
         self,
         *,
         base_url: str = "http://127.0.0.1:4096",
-        directory: Optional[str] = None,
-        workspace: Optional[str] = None,
+        directory: str | None = None,
+        workspace: str | None = None,
         timeout: float = 300.0,
-        httpx_client: Optional[httpx.Client] = None,
+        httpx_client: httpx.Client | None = None,
     ):
         self.base_url = base_url.rstrip("/")
         self.directory = directory
@@ -31,8 +31,8 @@ class OpencodeClient:
 
     def _merge_params(
         self,
-        params: Optional[Dict[str, Any]] = None,
-    ) -> Dict[str, Any]:
+        params: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
         params = dict(params or {})
         if self.directory and "directory" not in params:
             params["directory"] = self.directory
@@ -71,9 +71,9 @@ class OpencodeClient:
         method: str,
         path: str,
         *,
-        params: Optional[Dict[str, Any]] = None,
+        params: dict[str, Any] | None = None,
         json_body: Any = None,
-        headers: Optional[Dict[str, str]] = None,
+        headers: dict[str, str] | None = None,
     ) -> Any:
         url = self._build_url(path)
         params = self._merge_params(params)
@@ -86,14 +86,16 @@ class OpencodeClient:
         method: str,
         path: str,
         *,
-        params: Optional[Dict[str, Any]] = None,
+        params: dict[str, Any] | None = None,
         json_body: Any = None,
-        headers: Optional[Dict[str, str]] = None,
+        headers: dict[str, str] | None = None,
     ) -> httpx.Response:
         url = self._build_url(path)
         params = self._merge_params(params)
         hdrs = {"Content-Type": "application/json", **(headers or {})}
-        request = self._client.build_request(method, url, params=params, json=json_body, headers=hdrs)
+        request = self._client.build_request(
+            method, url, params=params, json=json_body, headers=hdrs
+        )
         return self._client.send(request, stream=True)
 
     # ------------------------------------------------------------------
@@ -109,7 +111,7 @@ class OpencodeClient:
     def global_dispose(self) -> Any:
         return self._request("POST", "/global/dispose")
 
-    def global_upgrade(self, target: Optional[str] = None) -> Any:
+    def global_upgrade(self, target: str | None = None) -> Any:
         return self._request("POST", "/global/upgrade", json_body={"target": target})
 
     def global_config_get(self) -> Any:
@@ -190,7 +192,9 @@ class OpencodeClient:
         return self._request("POST", f"/session/{session_id}/unrevert")
 
     def session_command(self, session_id: str, command: str, **kwargs) -> Any:
-        return self._request("POST", f"/session/{session_id}/command", json_body={"command": command, **kwargs})
+        return self._request(
+            "POST", f"/session/{session_id}/command", json_body={"command": command, **kwargs}
+        )
 
     def session_shell(self, session_id: str, command: str) -> Any:
         return self._request("POST", f"/session/{session_id}/shell", json_body={"command": command})
@@ -205,8 +209,10 @@ class OpencodeClient:
     def session_send(self, session_id: str, body: Any) -> Any:
         return self._request("POST", f"/session/{session_id}/message", json_body=body)
 
-    def v2_session_prompt(self, session_id: str, prompt: Any, *, delivery: str = "queue", **kwargs) -> Any:
-        body: Dict[str, Any] = {"prompt": prompt, "delivery": delivery, **kwargs}
+    def v2_session_prompt(
+        self, session_id: str, prompt: Any, *, delivery: str = "queue", **kwargs
+    ) -> Any:
+        body: dict[str, Any] = {"prompt": prompt, "delivery": delivery, **kwargs}
         return self._request("POST", f"/api/session/{session_id}/prompt", json_body=body)
 
     def v2_session_wait(self, session_id: str) -> Any:

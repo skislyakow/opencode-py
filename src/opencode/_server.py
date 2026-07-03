@@ -4,12 +4,11 @@ import json
 import os
 import re
 import subprocess
-import sys
 import time
-from typing import Any, Dict, Optional
+from typing import Any
 
 from opencode._binary import ensure_opencode
-from opencode._errors import ServerStartupTimeout
+from opencode._errors import ServerStartupTimeoutError
 from opencode._process import stop
 
 
@@ -23,7 +22,7 @@ class OpencodeServer:
         stop(self._proc)
 
     @property
-    def pid(self) -> Optional[int]:
+    def pid(self) -> int | None:
         return self._proc.pid
 
     @property
@@ -36,8 +35,8 @@ def create_opencode_server(
     hostname: str = "127.0.0.1",
     port: int = 4096,
     timeout: float = 30.0,
-    config: Optional[Dict[str, Any]] = None,
-    opencode_binary: Optional[str] = None,
+    config: dict[str, Any] | None = None,
+    opencode_binary: str | None = None,
 ) -> OpencodeServer:
     binary = opencode_binary or ensure_opencode()
 
@@ -55,7 +54,7 @@ def create_opencode_server(
 
     start_time = time.monotonic()
     output = ""
-    url: Optional[str] = None
+    url: str | None = None
 
     while time.monotonic() - start_time < timeout:
         line = proc.stdout.readline() if proc.stdout else b""
@@ -88,7 +87,7 @@ def create_opencode_server(
                 stderr_output = proc.stderr.read().decode("utf-8", errors="replace")
             except Exception:
                 pass
-        raise ServerStartupTimeout(
+        raise ServerStartupTimeoutError(
             f"Timeout waiting for opencode server after {timeout}s"
             f"\nstdout: {output}"
             f"\nstderr: {stderr_output}",

@@ -32,9 +32,7 @@ async def test_health_success() -> None:
     client = AsyncOpendcodeClient(
         base_url="http://localhost:9999",
         httpx_client=httpx.AsyncClient(
-            transport=httpx.MockTransport(
-                lambda _: httpx.Response(200, json={"ok": True})
-            )
+            transport=httpx.MockTransport(lambda _: httpx.Response(200, json={"ok": True}))
         ),
     )
     result = await client.health()
@@ -90,9 +88,7 @@ async def test_v2_session_wait_204() -> None:
     client = AsyncOpendcodeClient(
         base_url="http://localhost:9999",
         httpx_client=httpx.AsyncClient(
-            transport=httpx.MockTransport(
-                lambda _: httpx.Response(204)
-            )
+            transport=httpx.MockTransport(lambda _: httpx.Response(204))
         ),
     )
     result = await client.v2_session_wait("ses_1")
@@ -110,9 +106,7 @@ async def test_session_create() -> None:
     client = AsyncOpendcodeClient(
         base_url="http://localhost:9999",
         httpx_client=httpx.AsyncClient(
-            transport=httpx.MockTransport(
-                lambda _: httpx.Response(200, json={"id": "ses_1"})
-            )
+            transport=httpx.MockTransport(lambda _: httpx.Response(200, json={"id": "ses_1"}))
         ),
     )
     result = await client.session_create()

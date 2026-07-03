@@ -15,7 +15,9 @@ results = []
 def check(num: int, label: str, fn):
     try:
         result = fn()
-        pretty = result if isinstance(result, (str, int, bool, type(None))) else type(result).__name__
+        pretty = (
+            result if isinstance(result, (str, int, bool, type(None))) else type(result).__name__
+        )
         if isinstance(result, dict):
             pretty = f"dict keys={list(result.keys())[:5]}"
         if isinstance(result, list):
@@ -47,8 +49,14 @@ check(14, "V2 Models", lambda: client.v2_model_list())
 check(15, "V2 Providers", lambda: client.v2_provider_list())
 
 # 16-17: experimental tool (requires model+provider config)
-check(16, "Tool list", lambda: client.tool_list(provider="anthropic", model="claude-sonnet-4-20250514"))
-check(17, "Tool IDs", lambda: client.tool_ids(provider="anthropic", model="claude-sonnet-4-20250514"))
+check(
+    16,
+    "Tool list",
+    lambda: client.tool_list(provider="anthropic", model="claude-sonnet-4-20250514"),
+)
+check(
+    17, "Tool IDs", lambda: client.tool_ids(provider="anthropic", model="claude-sonnet-4-20250514")
+)
 
 # 18-21: system info
 check(18, "MCP list", lambda: client.mcp_list())

@@ -2,14 +2,14 @@ from opencode._async_client import AsyncOpendcodeClient
 from opencode._async_opencode import AsyncOpendcode, async_opencode
 from opencode._async_session import AsyncSession
 from opencode._client import OpencodeClient
-from opencode._errors import ApiError, BinaryNotFound, OpencodeError, ServerStartupTimeout
+from opencode._errors import ApiError, BinaryNotFoundError, OpencodeError, ServerStartupTimeoutError
 from opencode._models import (
     AssistantMessage,
     AssistantMessageReasoning,
     AssistantMessageText,
     AssistantMessageTool,
-    SessionMessage,
     SessionInfo,
+    SessionMessage,
     UserMessage,
 )
 from opencode._opencode import Opencode, opencode
@@ -19,6 +19,7 @@ from opencode._tools import ToolExecutor
 
 try:
     from importlib.metadata import version as _version
+
     __version__ = _version("opencode-py")
 except:  # noqa: E722
     __version__ = "0.0.0"
@@ -33,12 +34,12 @@ __all__ = [
     "AsyncOpendcodeClient",
     "AsyncSession",
     "async_opencode",
-    "BinaryNotFound",
+    "BinaryNotFoundError",
     "Opencode",
-    "OpendcodeClient",
-    "OpendcodeError",
+    "OpencodeClient",
+    "OpencodeError",
     "OpencodeServer",
-    "ServerStartupTimeout",
+    "ServerStartupTimeoutError",
     "Session",
     "ToolExecutor",
     "SessionInfo",

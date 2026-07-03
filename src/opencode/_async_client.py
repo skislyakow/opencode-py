@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Any, Dict, List, Optional, Sequence
+from typing import Any
 
 import httpx
 
@@ -12,10 +12,10 @@ class AsyncOpendcodeClient:
         self,
         *,
         base_url: str = "http://127.0.0.1:4096",
-        directory: Optional[str] = None,
-        workspace: Optional[str] = None,
+        directory: str | None = None,
+        workspace: str | None = None,
         timeout: float = 300.0,
-        httpx_client: Optional[httpx.AsyncClient] = None,
+        httpx_client: httpx.AsyncClient | None = None,
     ):
         self.base_url = base_url.rstrip("/")
         self.directory = directory
@@ -31,8 +31,8 @@ class AsyncOpendcodeClient:
 
     def _merge_params(
         self,
-        params: Optional[Dict[str, Any]] = None,
-    ) -> Dict[str, Any]:
+        params: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
         params = dict(params or {})
         if self.directory and "directory" not in params:
             params["directory"] = self.directory
@@ -71,14 +71,16 @@ class AsyncOpendcodeClient:
         method: str,
         path: str,
         *,
-        params: Optional[Dict[str, Any]] = None,
+        params: dict[str, Any] | None = None,
         json_body: Any = None,
-        headers: Optional[Dict[str, str]] = None,
+        headers: dict[str, str] | None = None,
     ) -> Any:
         url = self._build_url(path)
         params = self._merge_params(params)
         hdrs = {"Content-Type": "application/json", **(headers or {})}
-        response = await self._client.request(method, url, params=params, json=json_body, headers=hdrs)
+        response = await self._client.request(
+            method, url, params=params, json=json_body, headers=hdrs
+        )
         return self._handle(response)
 
     async def _request_stream(
@@ -86,14 +88,16 @@ class AsyncOpendcodeClient:
         method: str,
         path: str,
         *,
-        params: Optional[Dict[str, Any]] = None,
+        params: dict[str, Any] | None = None,
         json_body: Any = None,
-        headers: Optional[Dict[str, str]] = None,
+        headers: dict[str, str] | None = None,
     ) -> httpx.Response:
         url = self._build_url(path)
         params = self._merge_params(params)
         hdrs = {"Content-Type": "application/json", **(headers or {})}
-        request = self._client.build_request(method, url, params=params, json=json_body, headers=hdrs)
+        request = self._client.build_request(
+            method, url, params=params, json=json_body, headers=hdrs
+        )
         return await self._client.send(request, stream=True)
 
     # ------------------------------------------------------------------
@@ -109,7 +113,7 @@ class AsyncOpendcodeClient:
     async def global_dispose(self) -> Any:
         return await self._request("POST", "/global/dispose")
 
-    async def global_upgrade(self, target: Optional[str] = None) -> Any:
+    async def global_upgrade(self, target: str | None = None) -> Any:
         return await self._request("POST", "/global/upgrade", json_body={"target": target})
 
     async def global_config_get(self) -> Any:
@@ -190,10 +194,14 @@ class AsyncOpendcodeClient:
         return await self._request("POST", f"/session/{session_id}/unrevert")
 
     async def session_command(self, session_id: str, command: str, **kwargs) -> Any:
-        return await self._request("POST", f"/session/{session_id}/command", json_body={"command": command, **kwargs})
+        return await self._request(
+            "POST", f"/session/{session_id}/command", json_body={"command": command, **kwargs}
+        )
 
     async def session_shell(self, session_id: str, command: str) -> Any:
-        return await self._request("POST", f"/session/{session_id}/shell", json_body={"command": command})
+        return await self._request(
+            "POST", f"/session/{session_id}/shell", json_body={"command": command}
+        )
 
     # ------------------------------------------------------------------
     # V2 Session
@@ -205,8 +213,10 @@ class AsyncOpendcodeClient:
     async def session_send(self, session_id: str, body: Any) -> Any:
         return await self._request("POST", f"/session/{session_id}/message", json_body=body)
 
-    async def v2_session_prompt(self, session_id: str, prompt: Any, *, delivery: str = "queue", **kwargs) -> Any:
-        body: Dict[str, Any] = {"prompt": prompt, "delivery": delivery, **kwargs}
+    async def v2_session_prompt(
+        self, session_id: str, prompt: Any, *, delivery: str = "queue", **kwargs
+    ) -> Any:
+        body: dict[str, Any] = {"prompt": prompt, "delivery": delivery, **kwargs}
         return await self._request("POST", f"/api/session/{session_id}/prompt", json_body=body)
 
     async def v2_session_wait(self, session_id: str) -> Any:

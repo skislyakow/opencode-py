@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import json
+
 from opencode import OpencodeClient, create_opencode_server
 
 print("=" * 60)
@@ -56,22 +57,34 @@ print(f"    Провайдеры/модели: {providers}")
 # 8. Поиск в коде
 print("\n[8] Поиск текста...")
 found = client.find_text("create_opencode")
-n = len(found) if isinstance(found, list) else (len(found.get("data", [])) if isinstance(found, dict) else "?")
+n = (
+    len(found)
+    if isinstance(found, list)
+    else (len(found.get("data", [])) if isinstance(found, dict) else "?")
+)
 print(f"    Найдено: {n}")
 
 # 9. Отправка промпта (без LLM — только queue)
 print("\n[9] Отправка промпта (без API ключа)...")
 try:
     msg = client.v2_session_prompt(sid, {"text": "Привет! Ответь одним словом."}, delivery="queue")
-    print(f"    Ответ: type={msg.get('data', [{}])[0].get('type', '?') if isinstance(msg.get('data'), list) else type(msg).__name__}")
-    print(f"    Промпт принят в очередь обработки")
+    print(
+        f"    Ответ: type={msg.get('data', [{}])[0].get('type', '?') if isinstance(msg.get('data'), list) else type(msg).__name__}"
+    )
+    print("    Промпт принят в очередь обработки")
 except Exception as e:
     print(f"    Промпт принят (требуется API ключ): {e}")
 
 # 10. Контекстные сообщения
 print("\n[10] Сообщения сессии...")
 ctx = client.v2_session_context(sid)
-count = len(ctx.get("data", [])) if isinstance(ctx, dict) else len(ctx) if isinstance(ctx, list) else "?"
+count = (
+    len(ctx.get("data", []))
+    if isinstance(ctx, dict)
+    else len(ctx)
+    if isinstance(ctx, list)
+    else "?"
+)
 print(f"     Сообщений: {count}")
 
 # 11. Дополнительные возможности

@@ -51,13 +51,13 @@ def main() -> None:
 
     if delivery:
         print(f"Delivery enum (upstream): {delivery}")
-        print(f"Delivery default (our SDK): \"{our_delivery}\"")
+        print(f'Delivery default (our SDK): "{our_delivery}"')
         if "deferred" in delivery and our_delivery != "deferred":
             changes_needed.append(
                 f"Delivery enum changed to {delivery}. "
                 "Update default in: _client.py:208, _async_client.py:208, test_live.py:98\n"
-                "  from `delivery: str = \"queue\"` to `delivery: str = \"deferred\"`\n"
-                "  and delivery=\"queue\" to delivery=\"deferred\" in test_live.py"
+                '  from `delivery: str = "queue"` to `delivery: str = "deferred"`\n'
+                '  and delivery="queue" to delivery="deferred" in test_live.py'
             )
         elif "queue" in delivery:
             print("  => No change needed (still 'queue' compatible).")
@@ -77,7 +77,9 @@ def main() -> None:
             pass
     print(f"\nStructured output (format field): {'PRESENT' if has_structured else 'MISSING'}")
     if not has_structured:
-        changes_needed.append("'format' field in V1 prompt endpoint missing — structured output may have changed.")
+        changes_needed.append(
+            "'format' field in V1 prompt endpoint missing — structured output may have changed."
+        )
 
     # Summary
     print()

@@ -1,30 +1,30 @@
 from __future__ import annotations
 
 import warnings
-from typing import Any, AsyncIterator, Dict, Optional
+from collections.abc import AsyncIterator
+from typing import Any
 
 from opencode._async_client import AsyncOpendcodeClient
 from opencode._async_session import AsyncSession
-from opencode._models import SessionMessage
 from opencode._opencode import _extract_text, _resolve_model
 from opencode._server import OpencodeServer, create_opencode_server
 
-_async_opencode_state: Dict[str, Any] = {}
+_async_opencode_state: dict[str, Any] = {}
 
 
 class AsyncOpendcode:
     def __init__(
         self,
         *,
-        model: Optional[str] = None,
+        model: str | None = None,
         hostname: str = "127.0.0.1",
         port: int = 4096,
-        directory: Optional[str] = None,
-        workspace: Optional[str] = None,
+        directory: str | None = None,
+        workspace: str | None = None,
         server_timeout: float = 30.0,
         client_timeout: float = 300.0,
-        config: Optional[Dict[str, Any]] = None,
-        opencode_binary: Optional[str] = None,
+        config: dict[str, Any] | None = None,
+        opencode_binary: str | None = None,
     ):
         self._model = model
         self._hostname = hostname
@@ -36,8 +36,8 @@ class AsyncOpendcode:
         self._config = config
         self._opencode_binary = opencode_binary
 
-        self._server: Optional[OpencodeServer] = None
-        self._client: Optional[AsyncOpendcodeClient] = None
+        self._server: OpencodeServer | None = None
+        self._client: AsyncOpendcodeClient | None = None
 
     # ------------------------------------------------------------------
     # Async context manager
@@ -95,7 +95,7 @@ class AsyncOpendcode:
     # High-level API
     # ------------------------------------------------------------------
 
-    async def create_session(self, agent: Optional[str] = None, **kwargs) -> AsyncSession:
+    async def create_session(self, agent: str | None = None, **kwargs) -> AsyncSession:
         if agent:
             kwargs["agent"] = agent
         raw = await self.client.session_create(**kwargs)
@@ -106,10 +106,10 @@ class AsyncOpendcode:
         self,
         prompt: str,
         *,
-        files: Optional[Dict[str, Any]] = None,
+        files: dict[str, Any] | None = None,
         auto_tools: bool = False,
-        agent: Optional[str] = None,
-        format: Optional[Dict[str, Any]] = None,
+        agent: str | None = None,
+        format: dict[str, Any] | None = None,
         wait: bool = True,
         poll_interval: float = 0.5,
         poll_timeout: float = 600.0,
@@ -142,8 +142,8 @@ class AsyncOpendcode:
         self,
         prompt: str,
         *,
-        files: Optional[Dict[str, Any]] = None,
-        session: Optional[AsyncSession] = None,
+        files: dict[str, Any] | None = None,
+        session: AsyncSession | None = None,
     ) -> AsyncIterator[str]:
         import json
 
@@ -152,7 +152,7 @@ class AsyncOpendcode:
         if session is None:
             session = await self.create_session()
         # Use V1 synchronous prompt — events arrive via /event
-        body: Dict[str, Any] = {"parts": [{"type": "text", "text": prompt}]}
+        body: dict[str, Any] = {"parts": [{"type": "text", "text": prompt}]}
         resolved = _resolve_model(model=self._model, config=self._config)
         if resolved:
             body["model"] = resolved
@@ -209,12 +209,12 @@ async def async_opencode(
     *,
     keep: bool = False,
     auto_tools: bool = False,
-    agent: Optional[str] = None,
-    model: Optional[str] = None,
-    format: Optional[Dict[str, Any]] = None,
+    agent: str | None = None,
+    model: str | None = None,
+    format: dict[str, Any] | None = None,
     port: int = 4096,
-    directory: Optional[str] = None,
-    config: Optional[Dict[str, Any]] = None,
+    directory: str | None = None,
+    config: dict[str, Any] | None = None,
 ) -> str:
     global _async_opencode_state
     state = _async_opencode_state

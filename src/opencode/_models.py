@@ -5,7 +5,7 @@ try:
 except ImportError:
     from typing_extensions import NotRequired  # Python <3.11
 
-from typing import Any, Dict, List, Literal, TypedDict
+from typing import Any, Literal, TypedDict
 
 
 class SessionInfo(TypedDict):
@@ -35,7 +35,7 @@ class AssistantMessageTool(TypedDict):
 
 class ToolCall(TypedDict):
     name: str
-    input: Dict[str, Any]
+    input: dict[str, Any]
 
 
 class ToolUse(TypedDict):
@@ -48,7 +48,7 @@ class ToolResult(TypedDict):
     type: Literal["tool-result"]
     toolUseID: str
     tool: ToolCall
-    output: Dict[str, Any]
+    output: dict[str, Any]
 
 
 AssistantContent = AssistantMessageText | AssistantMessageReasoning | AssistantMessageTool | ToolUse
@@ -58,23 +58,23 @@ class AssistantMessage(TypedDict):
     id: str
     type: Literal["assistant"]
     agent: NotRequired[str | None]
-    model: NotRequired[Dict[str, str] | None]
-    content: List[AssistantContent]
+    model: NotRequired[dict[str, str] | None]
+    content: list[AssistantContent]
     structured: NotRequired[Any]
     finish: NotRequired[str | None]
     cost: NotRequired[float | None]
-    tokens: NotRequired[Dict[str, int] | None]
-    time: Dict[str, float]
+    tokens: NotRequired[dict[str, int] | None]
+    time: dict[str, float]
 
 
 class UserMessage(TypedDict):
     id: str
     type: Literal["user"]
     text: str
-    files: NotRequired[List[Any] | None]
-    agents: NotRequired[List[Any] | None]
-    references: NotRequired[List[Any] | None]
-    time: Dict[str, float]
+    files: NotRequired[list[Any] | None]
+    agents: NotRequired[list[Any] | None]
+    references: NotRequired[list[Any] | None]
+    time: dict[str, float]
 
 
 SessionMessage = AssistantMessage | UserMessage
@@ -85,12 +85,12 @@ class PromptFileAttachment(TypedDict):
     mime: NotRequired[str | None]
     name: NotRequired[str | None]
     description: NotRequired[str | None]
-    source: NotRequired[Dict[str, Any] | None]
+    source: NotRequired[dict[str, Any] | None]
 
 
 class PromptAgentAttachment(TypedDict):
     name: str
-    source: NotRequired[Dict[str, Any] | None]
+    source: NotRequired[dict[str, Any] | None]
 
 
 class PromptReferenceAttachment(TypedDict):
@@ -101,10 +101,10 @@ class PromptReferenceAttachment(TypedDict):
     branch: NotRequired[str | None]
     target: NotRequired[str | None]
     targetUri: NotRequired[str | None]
-    source: NotRequired[Dict[str, Any] | None]
+    source: NotRequired[dict[str, Any] | None]
 
 
 class OutputFormatJsonSchema(TypedDict):
     type: Literal["json_schema"]
-    schema: Dict[str, Any]
+    schema: dict[str, Any]
     retryCount: NotRequired[int | None]

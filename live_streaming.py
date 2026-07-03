@@ -1,5 +1,4 @@
 import atexit
-import sys
 
 from opencode import Opencode, _opencode
 

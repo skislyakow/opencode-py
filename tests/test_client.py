@@ -29,9 +29,7 @@ def test_health_success() -> None:
     client = OpencodeClient(
         base_url="http://localhost:9999",
         httpx_client=httpx.Client(
-            transport=httpx.MockTransport(
-                lambda _: httpx.Response(200, json={"ok": True})
-            )
+            transport=httpx.MockTransport(lambda _: httpx.Response(200, json={"ok": True}))
         ),
     )
     result = client.health()
@@ -81,11 +79,7 @@ def test_v2_session_prompt() -> None:
 def test_v2_session_wait_204() -> None:
     client = OpencodeClient(
         base_url="http://localhost:9999",
-        httpx_client=httpx.Client(
-            transport=httpx.MockTransport(
-                lambda _: httpx.Response(204)
-            )
-        ),
+        httpx_client=httpx.Client(transport=httpx.MockTransport(lambda _: httpx.Response(204))),
     )
     result = client.v2_session_wait("ses_1")
     assert result is None
@@ -100,9 +94,7 @@ def test_session_create() -> None:
     client = OpencodeClient(
         base_url="http://localhost:9999",
         httpx_client=httpx.Client(
-            transport=httpx.MockTransport(
-                lambda _: httpx.Response(200, json={"id": "ses_1"})
-            )
+            transport=httpx.MockTransport(lambda _: httpx.Response(200, json={"id": "ses_1"}))
         ),
     )
     result = client.session_create()

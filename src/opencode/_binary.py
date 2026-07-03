@@ -7,9 +7,6 @@ import shutil
 import stat
 import sys
 from pathlib import Path
-from typing import Optional
-
-from opencode._errors import BinaryNotFound
 
 
 def _system() -> str:
@@ -52,7 +49,7 @@ def _resolve_wrapper(path: str) -> str:
     return path
 
 
-def find_in_path(name: str = "opencode") -> Optional[str]:
+def find_in_path(name: str = "opencode") -> str | None:
     resolved = shutil.which(name)
     if resolved:
         return _resolve_wrapper(resolved)
@@ -68,7 +65,7 @@ def binary_dir() -> Path:
     return Path.home() / ".opencode" / "bin"
 
 
-def find_local(name: str = "opencode") -> Optional[str]:
+def find_local(name: str = "opencode") -> str | None:
     candidates = [name]
     if sys.platform == "win32":
         candidates = [f"{name}.exe", name]
@@ -93,7 +90,7 @@ def ensure_opencode(name: str = "opencode") -> str:
 def download_opencode(
     name: str = "opencode",
     version: str = "latest",
-    dest: Optional[Path] = None,
+    dest: Path | None = None,
 ) -> str:
     import io
     import json
@@ -107,13 +104,17 @@ def download_opencode(
 
     if version == "latest":
         url = "https://api.github.com/repos/anomalyco/opencode/releases/latest"
-        req = urllib.request.Request(url, headers={"Accept": "application/json", "User-Agent": "opencode-py"})
+        req = urllib.request.Request(
+            url, headers={"Accept": "application/json", "User-Agent": "opencode-py"}
+        )
         with urllib.request.urlopen(req) as resp:
             data = json.loads(resp.read().decode())
             version = data["tag_name"]
 
     ext = ".zip" if sys.platform == "win32" else ".tar.gz"
-    archive_url = f"https://github.com/anomalyco/opencode/releases/download/{version}/opencode-{suffix}{ext}"
+    archive_url = (
+        f"https://github.com/anomalyco/opencode/releases/download/{version}/opencode-{suffix}{ext}"
+    )
 
     print(f"Downloading opencode {version} ({suffix})...")
     req = urllib.request.Request(archive_url, headers={"User-Agent": "opencode-py"})

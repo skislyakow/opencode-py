@@ -2,20 +2,21 @@ from __future__ import annotations
 
 import json
 import warnings
-from typing import Any, Dict, Iterator, List, Optional
+from collections.abc import Iterator
+from typing import Any
 
 from opencode._client import OpencodeClient
 from opencode._models import SessionMessage
 from opencode._server import OpencodeServer, create_opencode_server
 from opencode._session import Session
 
-_opencode_state: Dict[str, Any] = {}
+_opencode_state: dict[str, Any] = {}
 
 
 def _resolve_model(
-    model: Optional[str] = None,
-    config: Optional[Dict[str, Any]] = None,
-) -> Optional[Dict[str, str]]:
+    model: str | None = None,
+    config: dict[str, Any] | None = None,
+) -> dict[str, str] | None:
     model_str = model
     if not model_str and config:
         model_str = config.get("model")
@@ -31,15 +32,15 @@ class Opencode:
     def __init__(
         self,
         *,
-        model: Optional[str] = None,
+        model: str | None = None,
         hostname: str = "127.0.0.1",
         port: int = 4096,
-        directory: Optional[str] = None,
-        workspace: Optional[str] = None,
+        directory: str | None = None,
+        workspace: str | None = None,
         server_timeout: float = 30.0,
         client_timeout: float = 300.0,
-        config: Optional[Dict[str, Any]] = None,
-        opencode_binary: Optional[str] = None,
+        config: dict[str, Any] | None = None,
+        opencode_binary: str | None = None,
     ):
         self._model = model
         self._hostname = hostname
@@ -51,8 +52,8 @@ class Opencode:
         self._config = config
         self._opencode_binary = opencode_binary
 
-        self._server: Optional[OpencodeServer] = None
-        self._client: Optional[OpencodeClient] = None
+        self._server: OpencodeServer | None = None
+        self._client: OpencodeClient | None = None
 
     # ------------------------------------------------------------------
     # Context manager
@@ -112,24 +113,24 @@ class Opencode:
     # High-level API
     # ------------------------------------------------------------------
 
-    def create_session(self, agent: Optional[str] = None, **kwargs) -> Session:
+    def create_session(self, agent: str | None = None, **kwargs) -> Session:
         if agent:
             kwargs["agent"] = agent
         raw = self.client.session_create(**kwargs)
         sid = raw["id"]
         return Session(self.client, sid)
 
-    def _resolve_model(self) -> Optional[Dict[str, str]]:
+    def _resolve_model(self) -> dict[str, str] | None:
         return _resolve_model(model=self._model, config=self._config)
 
     def ask(
         self,
         prompt: str,
         *,
-        files: Optional[List[Dict[str, Any]]] = None,
+        files: list[dict[str, Any]] | None = None,
         auto_tools: bool = False,
-        agent: Optional[str] = None,
-        format: Optional[Dict[str, Any]] = None,
+        agent: str | None = None,
+        format: dict[str, Any] | None = None,
         wait: bool = True,
         poll_interval: float = 0.5,
         poll_timeout: float = 600.0,
@@ -161,8 +162,8 @@ class Opencode:
         self,
         prompt: str,
         *,
-        files: Optional[List[Dict[str, Any]]] = None,
-        session: Optional[Session] = None,
+        files: list[dict[str, Any]] | None = None,
+        session: Session | None = None,
     ) -> Iterator[str]:
         import json
 
@@ -171,7 +172,7 @@ class Opencode:
         if session is None:
             session = self.create_session()
         # Use V1 synchronous prompt — the response events arrive via /event
-        body: Dict[str, Any] = {"parts": [{"type": "text", "text": prompt}]}
+        body: dict[str, Any] = {"parts": [{"type": "text", "text": prompt}]}
         resolved = self._resolve_model()
         if resolved:
             body["model"] = resolved
@@ -229,7 +230,7 @@ def _extract_text(msg: SessionMessage) -> str:
         if structured is not None:
             return json.dumps(structured, ensure_ascii=False, default=str)
         parts = msg.get("content", [])
-        texts: List[str] = []
+        texts: list[str] = []
         for part in parts:
             if isinstance(part, dict) and part.get("type") == "text":
                 texts.append(part.get("text", ""))
@@ -244,12 +245,12 @@ def opencode(
     *,
     keep: bool = False,
     auto_tools: bool = False,
-    agent: Optional[str] = None,
-    model: Optional[str] = None,
-    format: Optional[Dict[str, Any]] = None,
+    agent: str | None = None,
+    model: str | None = None,
+    format: dict[str, Any] | None = None,
     port: int = 4096,
-    directory: Optional[str] = None,
-    config: Optional[Dict[str, Any]] = None,
+    directory: str | None = None,
+    config: dict[str, Any] | None = None,
 ) -> str:
     global _opencode_state
     state = _opencode_state

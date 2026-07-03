@@ -1,15 +1,12 @@
 from __future__ import annotations
 
 import http.server
-import json
-import os
 import subprocess
 import sys
-import threading
 import time
 import urllib.request
 from pathlib import Path
-from typing import Any, Dict, Optional
+from typing import Any
 
 HERE = Path(__file__).parent
 
@@ -84,7 +81,7 @@ class ProxyHandler(http.server.SimpleHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(data)
 
-    def _proxy(self, method: str, body: Optional[bytes] = None) -> None:
+    def _proxy(self, method: str, body: bytes | None = None) -> None:
         target = f"http://127.0.0.1:{self.opencode_port}{self.path}"
         req = urllib.request.Request(target, data=body, method=method)
         for key in ("Content-Type", "Content-Length"):

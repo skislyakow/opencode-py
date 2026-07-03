@@ -1,7 +1,6 @@
 from __future__ import annotations
 
-import time
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 from opencode._client import OpencodeClient
 from opencode._models import SessionMessage
@@ -18,17 +17,17 @@ class Session:
         self,
         text: str,
         *,
-        files: Optional[List[Dict[str, Any]]] = None,
-        agents: Optional[List[Dict[str, Any]]] = None,
-        references: Optional[List[Dict[str, Any]]] = None,
-        model: Optional[Dict[str, str]] = None,
-        format: Optional[Dict[str, Any]] = None,
+        files: list[dict[str, Any]] | None = None,
+        agents: list[dict[str, Any]] | None = None,
+        references: list[dict[str, Any]] | None = None,
+        model: dict[str, str] | None = None,
+        format: dict[str, Any] | None = None,
         wait: bool = True,
         poll_interval: float = 0.5,
         poll_timeout: float = 600.0,
     ) -> SessionMessage:
-        parts: List[Dict[str, Any]] = [{"type": "text", "text": text}]
-        body: Dict[str, Any] = {"parts": parts}
+        parts: list[dict[str, Any]] = [{"type": "text", "text": text}]
+        body: dict[str, Any] = {"parts": parts}
         if model:
             body["model"] = model
         if format:
@@ -42,12 +41,12 @@ class Session:
             info = result.get("info", {})
             structured = result.get("structured") or info.get("structured")
             # Convert parts to V2-like SessionMessage format
-            text_parts: List[Dict[str, Any]] = []
+            text_parts: list[dict[str, Any]] = []
             for p in parts_list:
                 ptype = p.get("type", "")
                 if ptype in ("text", "reasoning", "tool"):
                     text_parts.append({"type": ptype, "text": p.get("text", "")})
-            msg: Dict[str, Any] = {
+            msg: dict[str, Any] = {
                 "id": info.get("id", ""),
                 "type": "assistant",
                 "content": text_parts,
@@ -64,21 +63,21 @@ class Session:
         self,
         text: str,
         *,
-        files: Optional[List[Dict[str, Any]]] = None,
-        model: Optional[Dict[str, str]] = None,
-        format: Optional[Dict[str, Any]] = None,
+        files: list[dict[str, Any]] | None = None,
+        model: dict[str, str] | None = None,
+        format: dict[str, Any] | None = None,
         max_tool_rounds: int = 25,
-        tool_executor: Optional[ToolExecutor] = None,
+        tool_executor: ToolExecutor | None = None,
         quiet: bool = False,
     ) -> SessionMessage:
         if tool_executor is None:
             tool_executor = ToolExecutor()
-        parts: List[Dict[str, Any]] = [{"type": "text", "text": text}]
+        parts: list[dict[str, Any]] = [{"type": "text", "text": text}]
         if files:
             parts.extend(files)
 
         for _round in range(max_tool_rounds):
-            body: Dict[str, Any] = {"parts": parts}
+            body: dict[str, Any] = {"parts": parts}
             if model:
                 body["model"] = model
             if format:
@@ -94,7 +93,7 @@ class Session:
             tool_uses = [p for p in parts_list if p.get("type") == "tool-use"]
             if tool_uses:
                 self._auto_confirmed = True
-                results: List[Dict[str, Any]] = []
+                results: list[dict[str, Any]] = []
                 for tu in tool_uses:
                     tool_name = tu.get("tool", {}).get("name", "")
                     tool_input = tu.get("tool", {}).get("input", {})
@@ -102,12 +101,14 @@ class Session:
                     if not quiet:
                         print(f"\033[33m[Tool] {tool_name}\033[0m")
                     output = tool_executor.execute(tool_name, tool_input)
-                    results.append({
-                        "type": "tool-result",
-                        "toolUseID": tool_id,
-                        "tool": {"name": tool_name},
-                        "output": output,
-                    })
+                    results.append(
+                        {
+                            "type": "tool-result",
+                            "toolUseID": tool_id,
+                            "tool": {"name": tool_name},
+                            "output": output,
+                        }
+                    )
 
                 parts = results
                 continue
@@ -115,16 +116,21 @@ class Session:
             # No tool-use parts — model may be planning or asking.
             if not self._auto_confirmed:
                 self._auto_confirmed = True
-                parts = [{"type": "text", "text": "Exit plan mode and proceed with execution now. Use tools as needed."}]
+                parts = [
+                    {
+                        "type": "text",
+                        "text": "Exit plan mode and proceed with execution now. Use tools as needed.",
+                    }
+                ]
                 continue
 
             # Final response (no tool calls, already confirmed)
-            text_parts: List[Dict[str, Any]] = []
+            text_parts: list[dict[str, Any]] = []
             for p in parts_list:
                 ptype = p.get("type", "")
                 if ptype in ("text", "reasoning", "tool"):
                     text_parts.append({"type": ptype, "text": p.get("text", "")})
-            msg: Dict[str, Any] = {
+            msg: dict[str, Any] = {
                 "id": info.get("id", ""),
                 "type": "assistant",
                 "content": text_parts,
@@ -141,7 +147,7 @@ class Session:
     def messages(self, **kwargs) -> Any:
         return self._client.v2_session_messages(self.id, **kwargs)
 
-    def context(self, **kwargs) -> List[SessionMessage]:
+    def context(self, **kwargs) -> list[SessionMessage]:
         return self._client.v2_session_context(self.id, **kwargs)
 
     def compact(self) -> Any:
