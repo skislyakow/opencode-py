@@ -11,7 +11,7 @@ import subprocess
 import sys
 
 
-def run(cmd, label):
+def run(cmd: str, label: str) -> int:
     print(f"\n{'=' * 60}")
     print(f"  {label}")
     print(f"{'=' * 60}")
@@ -25,21 +25,25 @@ def run(cmd, label):
     return result.returncode
 
 
-def main():
+def main() -> int:
     tests = []
 
-    if "--unit" in sys.argv or not any(a.startswith("--") for a in sys.argv[1:]):
+    if "--unit" in sys.argv or not any(
+        a.startswith("--") for a in sys.argv[1:]
+    ):
         tests.append(("python -m pytest tests/ -v", "Unit tests (17 tests)"))
 
-    if "--live" in sys.argv or not any(a.startswith("--") for a in sys.argv[1:]):
+    if "--live" in sys.argv or not any(
+        a.startswith("--") for a in sys.argv[1:]
+    ):
         tests.extend(
             [
                 (
-                    "python -c \"from opencode import opencode; r = opencode('say hi', keep=True); print('R1:', r); r2 = opencode('what did you say?', keep=True); print('R2:', r2); r3 = opencode('translate to russian', keep=False); print('R3:', r3)\"",
+                    "python -c \"from opencode import opencode; r = opencode('say hi', keep=True); print('R1:', r); r2 = opencode('what did you say?', keep=True); print('R2:', r2); r3 = opencode('translate to russian', keep=False); print('R3:', r3)\"",  # noqa: E501
                     "Keep mode (multi-turn)",
                 ),
                 (
-                    "python -c \"from opencode import opencode; r = opencode('create file _test_auto.txt with content AutoTest', auto_tools=True, keep=True); print('R:', r)\"",
+                    "python -c \"from opencode import opencode; r = opencode('create file _test_auto.txt with content AutoTest', auto_tools=True, keep=True); print('R:', r)\"",  # noqa: E501
                     "Auto-tools (file creation)",
                 ),
             ]
