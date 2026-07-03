@@ -70,9 +70,12 @@ try:
     msg = client.v2_session_prompt(
         sid, {"text": "Hello! Answer in one word."}, delivery="queue"
     )
-    print(
-        f"    Response: type={msg.get('data', [{}])[0].get('type', '?') if isinstance(msg.get('data'), list) else type(msg).__name__}"
-    )
+    data = msg.get("data", [{}])
+    if isinstance(data, list):
+        resp_type = data[0].get("type", "?")
+    else:
+        resp_type = type(msg).__name__
+    print(f"    Response: type={resp_type}")
     print("    Prompt queued for processing")
 except Exception as e:
     print(f"    Prompt accepted (API key required): {e}")
@@ -94,7 +97,9 @@ print("\n[11] Additional:")
 path = client.path_get()
 print(f"     Working directory: {path.get('worktree', '?')}")
 cmds = client.command_list()
-print(f"     Opencode commands: {len(cmds) if isinstance(cmds, list) else '?'}")
+print(
+    f"     Opencode commands: {len(cmds) if isinstance(cmds, list) else '?'}"
+)
 agents = client.app_agents()
 print(f"     Agents: {len(agents) if isinstance(agents, list) else '?'}")
 
