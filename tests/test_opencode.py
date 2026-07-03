@@ -1,8 +1,15 @@
 from __future__ import annotations
 
+from typing import cast
 from unittest.mock import MagicMock, patch
 
-from opencode._opencode import _extract_text, _opencode_state, _resolve_model, opencode
+from opencode._models import AssistantMessage
+from opencode._opencode import (
+    _extract_text,
+    _opencode_state,
+    _resolve_model,
+    opencode,
+)
 
 
 def test_resolve_model_default() -> None:
@@ -84,22 +91,28 @@ def test_opencode_keep_false_closes() -> None:
 
 
 def test_extract_text_structured() -> None:
-    msg = {
-        "id": "msg_1",
-        "type": "assistant",
-        "content": [],
-        "structured": {"name": "Alice", "age": 30},
-    }
+    msg = cast(
+        AssistantMessage,
+        {
+            "id": "msg_1",
+            "type": "assistant",
+            "content": [],
+            "structured": {"name": "Alice", "age": 30},
+        },
+    )
     result = _extract_text(msg)
     assert result == '{"name": "Alice", "age": 30}'
 
 
 def test_extract_text_structured_fallback() -> None:
-    msg = {
-        "id": "msg_2",
-        "type": "assistant",
-        "content": [{"type": "text", "text": "hello"}],
-    }
+    msg = cast(
+        AssistantMessage,
+        {
+            "id": "msg_2",
+            "type": "assistant",
+            "content": [{"type": "text", "text": "hello"}],
+        },
+    )
     result = _extract_text(msg)
     assert result == "hello"
 
@@ -126,7 +139,9 @@ def test_opencode_with_format() -> None:
     mock_ai.create_session.return_value = mock_session
 
     with patch("opencode._opencode.Opencode", return_value=mock_ai):
-        r = opencode("get name", format={"type": "json_schema", "schema": schema})
+        r = opencode(
+            "get name", format={"type": "json_schema", "schema": schema}
+        )
 
     assert r == '{"name": "Alice"}'
     mock_session.prompt.assert_called_once()

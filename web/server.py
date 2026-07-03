@@ -4,6 +4,7 @@ import http.server
 import subprocess
 import sys
 import time
+import urllib.error
 import urllib.request
 from pathlib import Path
 from typing import Any
@@ -11,7 +12,7 @@ from typing import Any
 HERE = Path(__file__).parent
 
 
-def start_opencode(port: int) -> subprocess.Popen:
+def start_opencode(port: int) -> subprocess.Popen[bytes]:
     from opencode._binary import ensure_opencode
 
     binary = ensure_opencode()
@@ -23,7 +24,9 @@ def start_opencode(port: int) -> subprocess.Popen:
     # Wait for server to be ready
     for _ in range(100):
         try:
-            r = urllib.request.urlopen(f"http://127.0.0.1:{port}/global/health")
+            r = urllib.request.urlopen(
+                f"http://127.0.0.1:{port}/global/health"
+            )
             if r.status == 200:
                 break
         except Exception:

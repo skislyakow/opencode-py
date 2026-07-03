@@ -4,7 +4,11 @@ import httpx
 import pytest
 
 from opencode import APIError, AsyncOpendcodeClient
-from opencode._response_models import FileContentResponse, HealthResponse, SessionResponse
+from opencode._response_models import (
+    FileContentResponse,
+    HealthResponse,
+    SessionResponse,
+)
 
 
 @pytest.mark.asyncio
@@ -33,7 +37,9 @@ async def test_health_success() -> None:
     client = AsyncOpendcodeClient(
         base_url="http://localhost:9999",
         httpx_client=httpx.AsyncClient(
-            transport=httpx.MockTransport(lambda _: httpx.Response(200, json={"ok": True}))
+            transport=httpx.MockTransport(
+                lambda _: httpx.Response(200, json={"ok": True})
+            )
         ),
     )
     result = await client.health()
@@ -47,7 +53,9 @@ async def test_health_error() -> None:
         base_url="http://localhost:9999",
         httpx_client=httpx.AsyncClient(
             transport=httpx.MockTransport(
-                lambda _: httpx.Response(500, json={"message": "internal error"})
+                lambda _: httpx.Response(
+                    500, json={"message": "internal error"}
+                )
             )
         ),
     )
@@ -59,14 +67,18 @@ async def test_health_error() -> None:
 
 @pytest.mark.asyncio
 async def test_merge_params_directory() -> None:
-    client = AsyncOpendcodeClient(base_url="http://localhost:9999", directory="/proj")
+    client = AsyncOpendcodeClient(
+        base_url="http://localhost:9999", directory="/proj"
+    )
     result = client._merge_params({"foo": "bar"})
     assert result == {"foo": "bar", "directory": "/proj"}
 
 
 @pytest.mark.asyncio
 async def test_merge_params_workspace() -> None:
-    client = AsyncOpendcodeClient(base_url="http://localhost:9999", workspace="ws-1")
+    client = AsyncOpendcodeClient(
+        base_url="http://localhost:9999", workspace="ws-1"
+    )
     result = client._merge_params({})
     assert result == {"workspace": "ws-1"}
 
@@ -77,7 +89,9 @@ async def test_v2_session_prompt() -> None:
         base_url="http://localhost:9999",
         httpx_client=httpx.AsyncClient(
             transport=httpx.MockTransport(
-                lambda _: httpx.Response(200, json={"id": "msg_1", "type": "assistant"})
+                lambda _: httpx.Response(
+                    200, json={"id": "msg_1", "type": "assistant"}
+                )
             )
         ),
     )
@@ -108,7 +122,9 @@ async def test_session_create() -> None:
     client = AsyncOpendcodeClient(
         base_url="http://localhost:9999",
         httpx_client=httpx.AsyncClient(
-            transport=httpx.MockTransport(lambda _: httpx.Response(200, json={"id": "ses_1"}))
+            transport=httpx.MockTransport(
+                lambda _: httpx.Response(200, json={"id": "ses_1"})
+            )
         ),
     )
     result = await client.session_create()
@@ -122,7 +138,9 @@ async def test_file_read() -> None:
         base_url="http://localhost:9999",
         httpx_client=httpx.AsyncClient(
             transport=httpx.MockTransport(
-                lambda _: httpx.Response(200, json={"content": "print('hello')"})
+                lambda _: httpx.Response(
+                    200, json={"content": "print('hello')"}
+                )
             )
         ),
     )

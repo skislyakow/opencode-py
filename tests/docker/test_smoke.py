@@ -7,7 +7,8 @@ def main() -> int:
     print("=== opencode-py Docker smoke test ===")
 
     print("\nStep 1: Verify imports...")
-    from opencode import (
+    # noqa comments: imports are for verification, not usage
+    from opencode import (  # noqa: F401
         Opencode,
         OpencodeClient,
         OpencodeServer,
@@ -16,24 +17,25 @@ def main() -> int:
         async_opencode,
         opencode,
     )
-    from opencode._async_client import AsyncOpendcodeClient
-    from opencode._async_opencode import AsyncOpendcode
-    from opencode._async_session import AsyncSession
+    from opencode._async_client import AsyncOpendcodeClient  # noqa: F401
+    from opencode._async_opencode import AsyncOpendcode  # noqa: F401
+    from opencode._async_session import AsyncSession  # noqa: F401
     from opencode._binary import ensure_opencode
-    from opencode._errors import (
+    from opencode._errors import (  # noqa: F401
         APIError,
         BadRequestError,
         OpencodeError,
         RateLimitError,
     )
-    from opencode._response_models import (
+    from opencode._response_models import (  # noqa: F401
         FileContentResponse,
         HealthResponse,
         SessionResponse,
         V1SessionResponse,
     )
-    from opencode._session import SessionMessage
-    from opencode._tools import ToolExecutor as ToolExecutor2
+    from opencode._session import SessionMessage  # noqa: F401
+    from opencode._tools import ToolExecutor as ToolExecutor2  # noqa: F401
+
     print("  All imports OK")
 
     print("\nStep 2: Download opencode binary...")
@@ -43,7 +45,9 @@ def main() -> int:
     print("  OK")
 
     print("\nStep 3: Check binary version...")
-    result = subprocess.run([binary, "--version"], capture_output=True, text=True)
+    result = subprocess.run(
+        [binary, "--version"], capture_output=True, text=True
+    )
     print(f"  Version: {result.stdout.strip()}")
     assert result.returncode == 0, f" --version failed: {result.stderr}"
     print("  OK")
@@ -51,6 +55,7 @@ def main() -> int:
     print("\nStep 4: Verify package metadata...")
     try:
         from importlib.metadata import version as _version
+
         v = _version("opencode-py")
         print(f"  Package version: {v}")
     except Exception:

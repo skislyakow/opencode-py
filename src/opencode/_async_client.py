@@ -360,7 +360,9 @@ class AsyncOpendcodeClient:
     async def health(self) -> HealthResponse:
         return cast(
             HealthResponse,
-            await self._request("GET", "/global/health", cast_to=HealthResponse),
+            await self._request(
+                "GET", "/global/health", cast_to=HealthResponse
+            ),
         )
 
     async def global_event(self) -> httpx.Response:
@@ -402,14 +404,22 @@ class AsyncOpendcodeClient:
     # ------------------------------------------------------------------
 
     async def session_create(self, **kwargs: Any) -> SessionResponse:
-        return cast(SessionResponse, await self._request(
-            "POST", "/session", json_body=kwargs or None, cast_to=SessionResponse,
-        ))
+        return cast(
+            SessionResponse,
+            await self._request(
+                "POST",
+                "/session",
+                json_body=kwargs or None,
+                cast_to=SessionResponse,
+            ),
+        )
 
     async def session_get(self, session_id: str) -> SessionResponse:
         return cast(
             SessionResponse,
-            await self._request("GET", f"/session/{session_id}", cast_to=SessionResponse),
+            await self._request(
+                "GET", f"/session/{session_id}", cast_to=SessionResponse
+            ),
         )
 
     async def session_list(self, **kwargs: Any) -> Any:
@@ -493,10 +503,18 @@ class AsyncOpendcodeClient:
     async def v2_session_list(self, **kwargs: Any) -> Any:
         return await self._request("GET", "/api/session", params=kwargs)
 
-    async def session_send(self, session_id: str, body: Any) -> V1SessionResponse:
-        return cast(V1SessionResponse, await self._request(
-            "POST", f"/session/{session_id}/message", json_body=body, cast_to=V1SessionResponse,
-        ))
+    async def session_send(
+        self, session_id: str, body: Any
+    ) -> V1SessionResponse:
+        return cast(
+            V1SessionResponse,
+            await self._request(
+                "POST",
+                f"/session/{session_id}/message",
+                json_body=body,
+                cast_to=V1SessionResponse,
+            ),
+        )
 
     async def v2_session_prompt(
         self,
@@ -569,9 +587,15 @@ class AsyncOpendcodeClient:
     # ------------------------------------------------------------------
 
     async def file_read(self, path: str, **kwargs: Any) -> FileContentResponse:
-        return cast(FileContentResponse, await self._request(
-            "GET", "/file/content", params={"path": path, **kwargs}, cast_to=FileContentResponse,
-        ))
+        return cast(
+            FileContentResponse,
+            await self._request(
+                "GET",
+                "/file/content",
+                params={"path": path, **kwargs},
+                cast_to=FileContentResponse,
+            ),
+        )
 
     async def file_list(self, path: str, **kwargs: Any) -> Any:
         return await self._request(

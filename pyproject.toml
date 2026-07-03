@@ -68,5 +68,9 @@ strict = true
 ignore_missing_imports = true
 files = "src/opencode"
 
+[[tool.mypy.overrides]]
+module = "tests.*"
+disable_error_code = "untyped-decorator"
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
