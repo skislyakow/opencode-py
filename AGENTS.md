@@ -314,9 +314,15 @@ and reports unreleased commits.
 - [ ] CI green on master
 - [ ] `python -m build && twine check dist/*` — wheel is valid
 
-**Proactive behavior**: At the start of each session, I will run
-`python scripts/check-release.py` automatically and alert you if a release
-is due (commits since last tag without version bump).
+**Proactive behavior**: 
+- At the start of each session, I will run `python scripts/check-release.py`
+  automatically and alert you if a release is due (commits since last tag
+  without version bump).
+- **Before every commit**, I will check if the staged changes include anything
+  "user-facing" (feat, fix, refactor, or dependency changes — anything beyond
+  chore/docs/style). If there has been no version bump since the last tagged
+  release, I will warn you and ask whether to bump the version before
+  committing.
 
 ### Step J: Compare with official SDK
 1. Evaluate `opencode-ai` (official Stainless SDK) for low-level layer
