@@ -16,6 +16,14 @@ Python SDK для [Opencode](https://opencode.ai) — open source AI coding agen
 pip install opencode-py
 ```
 
+После установки команда `opencode-py` становится доступна **общесистемно** — из любой директории в терминале, не обязательно внутри проекта:
+
+```bash
+opencode-py "What is the capital of France?"
+# opencode-py <prompt>  — одноразовый запрос
+# echo 'question' | opencode-py  — через pipe
+```
+
 ## Быстрый старт
 
 ### One-shot (запускает сервер, спрашивает, закрывает)
