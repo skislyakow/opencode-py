@@ -8,8 +8,9 @@ from opencode import opencode
 def main() -> None:
     args = sys.argv[1:]
     if not args:
-        print("Usage: python -m opencode <prompt>")
-        print("   or: echo 'question' | python -m opencode")
+        print("Usage: opencode-py <prompt>")
+        print("   or: python -m opencode <prompt>")
+        print("   or: echo 'question' | opencode-py")
         sys.exit(1)
     prompt = " ".join(args)
     result = opencode(prompt)

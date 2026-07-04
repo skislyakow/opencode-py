@@ -45,7 +45,7 @@ Documentation = "https://github.com/skislyakow/opencode-py"
 Changelog = "https://github.com/skislyakow/opencode-py/blob/main/CHANGELOG.md"
 
 [project.scripts]
-opencode = "opencode.__main__:main"
+opencode-py = "opencode.__main__:main"
 
 [build-system]
 requires = ["hatchling"]
