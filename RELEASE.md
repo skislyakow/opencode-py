@@ -48,5 +48,6 @@ git push
 
 | Version | Date | Highlights |
 |---------|------|------------|
-| 0.1.1   | —    | Initial PyPI release |
+| 0.2.1   | 2025-07-04 | Fix: rename entry point to `opencode-py` to avoid conflict with the real `opencode` binary |
 | 0.2.0   | 2025-07-03 | Pydantic models, retry, typed errors, logging, async, streaming, auto-tools, web UI |
+| 0.1.1   | —    | Initial PyPI release |
