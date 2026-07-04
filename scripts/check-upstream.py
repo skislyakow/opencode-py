@@ -10,14 +10,14 @@ from __future__ import annotations
 
 import json
 import urllib.request
-from typing import Any
+from typing import Any, cast
 
 UPSTREAM_URL = "https://raw.githubusercontent.com/anomalyco/opencode/dev/packages/sdk/openapi.json"
 
 
 def fetch_json(url: str) -> dict[str, Any]:
     with urllib.request.urlopen(url, timeout=15) as resp:
-        return json.loads(resp.read().decode())
+        return cast(dict[str, Any], json.loads(resp.read().decode()))
 
 
 def get_inline_delivery_enum(spec: dict[str, Any]) -> list[str] | None:
@@ -26,7 +26,7 @@ def get_inline_delivery_enum(spec: dict[str, Any]) -> list[str] | None:
         prompt = spec["paths"]["/api/session/{sessionID}/prompt"]["post"]
         props = prompt["requestBody"]["content"]["application/json"]["schema"]["properties"]
         delivery = props["delivery"]
-        return delivery.get("enum")
+        return cast(list[str] | None, delivery.get("enum"))
     except Exception:
         return None
 

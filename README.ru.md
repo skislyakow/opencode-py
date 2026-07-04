@@ -16,15 +16,35 @@ Python SDK для [Opencode](https://opencode.ai) — open source AI coding agen
 pip install opencode-py
 ```
 
-После установки команда `opencode-py` становится доступна **общесистемно** — из любой директории в терминале, не обязательно внутри проекта:
+## CLI
+
+После установки команда `opencode-py` доступна **общесистемно** из любой директории:
 
 ```bash
-opencode-py "What is the capital of France?"
-# opencode-py <prompt>  — одноразовый запрос
-# echo 'question' | opencode-py  — через pipe
+opencode-py "What is the capital of France?"   # одноразовый запрос
+echo "What is the capital of France?" | opencode-py  # через pipe
+opencode-py --help                              # все флаги
 ```
 
-## Быстрый старт
+Флаги CLI:
+
+| Флаг | Описание |
+|------|----------|
+| `prompt` (позиционный) | Текст запроса или чтение из stdin |
+| `--model` / `-m` | Имя модели (например `opencode/big-pickle`) |
+| `--keep` / `-k` | Сохранять сессию между вызовами |
+| `--auto-tools` | Агентное выполнение инструментов |
+| `--directory` / `-d` | Рабочая директория |
+| `--port` / `-p` | Порт сервера (по умолчанию 4096) |
+
+Также доступен `python -m opencode`:
+
+```bash
+python -m opencode "Explain dependency injection"
+python -m opencode --model "opencode/big-pickle" "Hello"
+```
+
+## Справочник клиентской библиотеки
 
 ### One-shot (запускает сервер, спрашивает, закрывает)
 
@@ -64,15 +84,41 @@ with Opencode() as ai:
     print(f"AI: {msg2}")
 ```
 
+### Методы Session
+
+Каждый объект `Session` предоставляет дополнительные методы:
+
+```python
+with Opencode() as ai:
+    session = ai.create_session()
+    session.prompt("Hello")
+
+    # История диалога
+    ctx = session.context()        # список всех сообщений
+    msgs = session.messages()      # пагинированный список
+
+    # Управление
+    session.abort()                # прервать генерацию
+    session.compact()              # сжать историю
+    session.fork()                 # форкнуть в новую сессию
+
+    # Инспекция
+    session.diff()                 # файловые изменения от AI
+    session.todo()                 # оставшиеся задачи
+```
+
 ### Multi-turn (keep mode)
+
+Переиспользует сервер и сессию между вызовами:
 
 ```python
 from opencode import opencode
 
-# keep=True — сервер и сессия живут между вызовами
 r1 = opencode("Меня зовут Вася", keep=True)
 r2 = opencode("Какое имя я назвал?", keep=True)  # помнит диалог
-r3 = opencode("Хватит", keep=False)  # keep=False закрывает сервер
+r3 = opencode("Хватит", keep=False)               # закрывает сервер
+
+# Также принимает: model, format, port, directory, config, agent
 ```
 
 ### Auto-tools (агент с инструментами)
@@ -94,11 +140,19 @@ with Opencode() as ai:
     session = ai.create_session()
     msg = session.ask(
         "Напиши test.py с кодом print('hello')",
-        tool_executor=ToolExecutor(permissions={"write": "allow"}),
+        tool_executor=ToolExecutor(
+            permissions={"write": "allow"},
+            workdir="/path/to/sandbox",       # ограничить файловые операции
+        ),
+        max_tool_rounds=25,                     # лимит безопасности
+        quiet=True,                             # скрыть логи инструментов
     )
 ```
 
-### Низкоуровневый API (любой endpoint)
+Первый ответ AI в `ask()` входит в plan mode — SDK автоматически подтверждает
+`"Exit plan mode and proceed"`, чтобы модель сразу выполняла инструменты.
+
+### Низкоуровневый клиент (любой endpoint)
 
 ```python
 with Opencode() as ai:
@@ -106,8 +160,120 @@ with Opencode() as ai:
     diff = ai.client.vcs_diff("HEAD~3")
     config = ai.client.config_get()
     session = ai.client.session_create()
-    ai.client.v2_session_prompt(session["id"], {"text": "Hello"})
+    ai.client.v2_session_prompt(session.id, {"text": "Hello"})
 ```
+
+Все методы возвращают типизированные Pydantic модели — IDE автодополнение,
+`.model_dump()`, `.model_dump_json()`.
+
+#### Подключение к существующему серверу
+
+Без запуска подпроцесса — напрямую к работающему `opencode serve`:
+
+```python
+from opencode import OpencodeClient
+
+client = OpencodeClient(base_url="http://127.0.0.1:4096", directory=".")
+health = client.health()
+```
+
+```python
+from opencode import AsyncOpendcodeClient
+
+async with AsyncOpendcodeClient(base_url="http://127.0.0.1:4096") as client:
+    health = await client.health()
+```
+
+#### Клонирование клиента
+
+```python
+client2 = client.copy(base_url="http://other:4096", timeout=60.0)
+
+# Через with_options:
+faster = client.with_options(timeout=10.0, max_retries=0)
+```
+
+### Retry & обработка ошибок
+
+Типизированная иерархия исключений. Все ошибки импортируются из `opencode`:
+
+```python
+from opencode import OpencodeClient, RateLimitError, InternalServerError
+
+client = OpencodeClient(max_retries=3)  # exponential backoff + jitter
+
+try:
+    health = client.health()
+    print(health.version)
+except RateLimitError:
+    print("too many requests — retried but failed")
+except InternalServerError:
+    print("server error")
+```
+
+Полная иерархия ошибок:
+
+| Класс | HTTP статус | Когда возникает |
+|-------|-------------|----------------|
+| `OpencodeError` | — | Базовый класс для всех SDK ошибок |
+| `APIConnectionError` | — | Ошибка сети / соединения |
+| `APITimeoutError` | — | Таймаут запроса |
+| `APIResponseValidationError` | — | Ответ не соответствует схеме |
+| `APIStatusError` | 4xx/5xx | Базовый для HTTP ошибок |
+| `BadRequestError` | 400 | Некорректный запрос |
+| `AuthenticationError` | 401 | Неверный или отсутствующий API ключ |
+| `PermissionDeniedError` | 403 | Доступ запрещён |
+| `NotFoundError` | 404 | Ресурс не найден |
+| `ConflictError` | 409 | Конфликт ресурсов |
+| `UnprocessableEntityError` | 422 | Ошибка валидации тела запроса |
+| `RateLimitError` | 429 | Превышен лимит запросов |
+| `InternalServerError` | 500+ | Ошибка сервера |
+| `BinaryNotFoundError` | — | Бинарник opencode не найден в PATH |
+| `ServerStartupTimeoutError` | — | Сервер не запустился вовремя |
+
+Политика retry: 408, 409, 429, 5xx и таймауты повторяются с экспоненциальной
+задержкой + jitter. Заголовки `Retry-After` и `retry-after-ms` учитываются.
+
+### Structured output
+
+```python
+with Opencode(model="anthropic/claude-sonnet-4") as ai:
+    result = ai.ask(
+        "Сгенерируй профиль пользователя",
+        format={
+            "type": "json_schema",
+            "schema": {
+                "type": "object",
+                "properties": {
+                    "name": {"type": "string"},
+                    "age": {"type": "integer"},
+                },
+                "required": ["name", "age"],
+            },
+        },
+    )
+    # result — JSON строка, соответствующая схеме
+```
+
+Работает с `opencode()`, `async_opencode()`, `Session.prompt()` и `Session.ask()`.
+
+Требует модель с поддержкой `tool_choice="required"` (Claude, GPT-4).
+Бесплатная модель `opencode/big-pickle` (DeepSeek) НЕ поддерживает.
+
+### Отладка
+
+```bash
+# Linux / macOS (bash/zsh)
+OPENCODE_LOG=debug python my_script.py
+
+# Windows (PowerShell)
+$env:OPENCODE_LOG="debug"; python my_script.py
+
+# Windows (cmd)
+set OPENCODE_LOG=debug && python my_script.py
+```
+
+Включает подробное логирование HTTP-запросов (метод, URL, заголовки, время выполнения).
 
 ### Web UI (без зависимостей)
 
@@ -126,18 +292,92 @@ python live.py
 
 Многострочный диалог с `keep=True`, сервер чистится при выходе (`atexit`).
 
-### Конфигурация
+### ToolExecutor (справочник)
 
 ```python
-with Opencode(
-    model="claude-sonnet-4-20250514",
-    directory="/path/to/project",
-    port=4096,
-) as ai:
+from opencode import ToolExecutor
+
+# Пермишены по умолчанию:
+#   bash  → "ask"   (спрашивать в консоли)
+#   write → "allow"
+#   edit  → "allow"
+#   read  → "allow"
+#   glob  → "allow"
+#   grep  → "allow"
+
+executor = ToolExecutor(
+    permissions={
+        "bash": "allow",       # всегда разрешать
+        "write": "deny",        # всегда запрещать
+        "grep": "ask",          # спрашивать каждый раз
+    },
+    workdir="/path/to/sandbox",   # ограничить файловые операции
+    confirm=lambda name, inp: name != "bash",  # кастомная функция
+)
+
+# Использование с Session.ask():
+session.ask("Create a project", tool_executor=executor)
+```
+
+### Управление бинарником
+
+Если `opencode` не найден в PATH, SDK автоматически скачивает его в
+`~/.opencode/bin/opencode`.
+
+Порядок разрешения:
+1. `PATH` — `shutil.which("opencode")`
+2. `~/.opencode/bin/opencode` — ранее скачанная копия
+3. GitHub releases — скачивание под текущую платформу
+
+Поддерживаемые платформы: `win32-x64`, `win32-arm64`, `darwin-x64`,
+`darwin-arm64`, `linux-x64`, `linux-arm64`.
+
+Явное указание пути:
+
+```python
+with Opencode(opencode_binary="/custom/path/opencode") as ai:
     ...
 ```
 
+### OpencodeServer (низкоуровневое управление сервером)
+
+```python
+from opencode import OpencodeServer, create_opencode_server
+
+server = create_opencode_server(
+    port=4096,
+    hostname="127.0.0.1",
+    timeout=30.0,
+    config={"model": "opencode/big-pickle"},
+    opencode_binary="/path/to/opencode",
+)
+print(server.url)  # "http://127.0.0.1:4096"
+
+# Позже:
+server.close()  # убивает подпроцесс
+```
+
+## Справочник конфигурации
+
+Все параметры `Opendcode()` / `AsyncOpendcode()`:
+
+| Параметр | По умолчанию | Описание |
+|----------|-------------|----------|
+| `model` | `None` | Имя модели, например `"opencode/big-pickle"` или `"provider/model"` |
+| `hostname` | `"127.0.0.1"` | Адрес для привязки сервера |
+| `port` | `4096` | Порт сервера |
+| `directory` | `None` | Рабочая директория для всех API вызовов |
+| `workspace` | `None` | Директория workspace для сессии |
+| `server_timeout` | `30.0` | Секунд ожидания запуска сервера |
+| `client_timeout` | `300.0` | Секунд до таймаута HTTP запроса |
+| `config` | `None` | Словарь конфигурации сервера |
+| `opencode_binary` | `None` | Путь к бинарнику opencode (авто-скачивание если не указан) |
+
+Все параметры keyword-only.
+
 ## Async API
+
+### Базовое использование
 
 ```python
 import asyncio
@@ -175,7 +415,30 @@ from opencode import AsyncOpendcodeClient
 
 async with AsyncOpendcodeClient() as client:
     health = await client.health()
-    print(health)
+    print(health.version)  # типизированная Pydantic модель
+```
+
+### Async функция-утилита
+
+```python
+from opencode import async_opencode
+
+result = await async_opencode("Hello", keep=True)
+result2 = await async_opencode("Still there?", keep=True)
+result3 = await async_opencode("Bye")
+
+# Также принимает: model, format, port, directory, config, agent, auto_tools
+```
+
+## Pydantic response модели
+
+```python
+from opencode._response_models import HealthResponse, SessionResponse, FileContentResponse
+
+# Это классы BaseModel с методами:
+#   .model_dump() -> dict
+#   .model_dump_json() -> str
+#   .model_validate(dict) -> classmethod
 ```
 
 ## Разработка

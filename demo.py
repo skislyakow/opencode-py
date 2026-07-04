@@ -13,7 +13,7 @@ print("=" * 60)
 
 # 1. Start the server
 print("\n[1] Starting opencode serve...")
-server = create_opencode_server(port=4097)
+server = create_opencode_server(port=4098)
 print(f"    Server at {server.url} (pid={server.pid})")
 
 client = OpencodeClient(base_url=server.url)
@@ -35,7 +35,7 @@ print(f"    Session ID: {sid}")
 # 5. File read
 print("\n[5] Reading file...")
 f = client.file_read("README.md")
-print(f"    File: {f.get('type', '?')} ({len(f.get('content', ''))} chars)")
+print(f"    File: {len(f.content)} chars")
 
 # 6. VCS info
 print("\n[6] VCS status...")
@@ -46,12 +46,9 @@ print(f"    {json.dumps(vcs, indent=2, ensure_ascii=False)[:200]}")
 print("\n[7] Available models...")
 models = client.v2_model_list()
 print(f"    Format: {type(models).__name__}")
-if isinstance(models, dict):
-    providers = list(models.get("data", {}).keys())[:5]
-elif isinstance(models, list):
-    providers = [m.get("id", "?")[:20] for m in models[:5]]
-else:
-    providers = []
+data = models.get("data", models) if isinstance(models, dict) else models
+data = data if isinstance(data, list) else []
+providers = [m.get("id", str(m)[:20]) for m in data[:5]]
 print(f"    Providers/models: {providers}")
 
 # 8. Code search
