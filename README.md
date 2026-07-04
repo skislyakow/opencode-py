@@ -17,6 +17,17 @@ Python SDK for [Opencode](https://opencode.ai) — the open source AI coding age
 pip install opencode-py
 ```
 
+**Do I need Opencode pre-installed?** No. The SDK automatically downloads the
+`opencode` binary for your OS (Windows/macOS/Linux, x64/arm64) on first use to
+`~/.opencode/bin/`. The binary is only used internally by the SDK — it is NOT
+added to PATH, NOT registered system-wide, and NOT shown in the Start Menu.
+
+**What if I install the official Opencode later?** If you install Opencode
+via `npm install -g opencode-ai` or another method, the SDK will use the
+PATH version instead — no conflict.
+
+*See [Binary management](#binary-management) for details.*
+
 ## CLI
 
 After installation, the `opencode-py` command is available **system-wide** from any directory:
