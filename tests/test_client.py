@@ -4,7 +4,12 @@ import httpx
 import pytest
 
 from opencode import APIError, OpencodeClient
-from opencode._response_models import FileContentResponse, HealthResponse, SessionResponse
+from opencode._response_models import (
+    FileContentResponse,
+    HealthResponse,
+    SessionResponse,
+    V1SessionResponse,
+)
 
 
 def test_create_client_defaults() -> None:
@@ -75,7 +80,9 @@ def test_v2_session_prompt() -> None:
         ),
     )
     result = client.v2_session_prompt("ses_1", {"text": "hello"})
-    assert result == {"id": "msg_1", "type": "assistant"}
+    assert isinstance(result, V1SessionResponse)
+    assert result.id == "msg_1"
+    assert result.type == "assistant"
 
 
 def test_v2_session_wait_204() -> None:
