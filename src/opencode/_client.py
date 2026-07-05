@@ -359,7 +359,7 @@ class OpencodeClient:
         )
         response = self._client.send(request, stream=True)
         if self._raw_mode:
-            return RawResponse(response, response)  # type: ignore[return-value]
+            return cast(httpx.Response, RawResponse(response, response))
         return response
 
     # ------------------------------------------------------------------
