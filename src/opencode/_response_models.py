@@ -1,8 +1,44 @@
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, Generic, TypeVar
 
+import httpx
 from pydantic import BaseModel, ConfigDict
+
+_T = TypeVar("_T")
+
+
+class RawResponse(Generic[_T]):
+    """Wraps a parsed response with the raw httpx.Response for direct access.
+
+    Used with the ``with_raw_response`` context manager on the client::
+
+        with client.with_raw_response:
+            raw = client.health()
+        raw.status_code  # 200
+        raw.headers      # httpx.Headers
+        raw.parsed       # HealthResponse
+    """
+
+    def __init__(self, parsed: _T, response: httpx.Response) -> None:
+        self.parsed = parsed
+        self._response = response
+
+    @property
+    def status_code(self) -> int:
+        return self._response.status_code
+
+    @property
+    def headers(self) -> httpx.Headers:
+        return self._response.headers
+
+    @property
+    def content(self) -> bytes:
+        return self._response.content
+
+    @property
+    def response(self) -> httpx.Response:
+        return self._response
 
 
 class OpencodeBaseModel(BaseModel):

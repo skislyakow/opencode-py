@@ -43,6 +43,7 @@ from opencode._response_models import (
     PtyResponse,
     PtyShell,
     QuestionRequestResponse,
+    RawResponse,
     SessionResponse,
     SnapshotFileDiffResponse,
     Symbol,
@@ -66,6 +67,20 @@ MAX_RETRY_DELAY = 8.0
 RETRYABLE_STATUS_CODES = {408, 409, 429}
 
 
+class _AsyncRawResponseContextManager:
+    """Context manager that enables raw response mode on the async client."""
+
+    def __init__(self, client: AsyncOpendcodeClient) -> None:
+        self._client = client
+
+    def __enter__(self) -> AsyncOpendcodeClient:
+        self._client._raw_mode = True
+        return self._client
+
+    def __exit__(self, *args: Any) -> None:
+        self._client._raw_mode = False
+
+
 class AsyncOpendcodeClient:
     def __init__(
         self,
@@ -83,6 +98,7 @@ class AsyncOpendcodeClient:
         self._timeout = timeout
         self._max_retries = max_retries
         self._client = httpx_client or httpx.AsyncClient(timeout=httpx.Timeout(timeout))
+        self._raw_mode = False
 
     # ------------------------------------------------------------------
     # Internal helpers
@@ -224,16 +240,22 @@ class AsyncOpendcodeClient:
     ) -> Any:
         if response.is_success:
             if response.status_code == 204:
-                return None
-            ct = response.headers.get("content-type", "")
-            if "text/event-stream" in ct:
-                return response
-            if "text/" in ct:
-                return response.text
-            json_data = response.json()
-            if cast_to is not None:
-                return self._construct_type(cast_to, json_data)
-            return json_data
+                parsed: Any = None
+            else:
+                ct = response.headers.get("content-type", "")
+                if "text/event-stream" in ct:
+                    parsed = response
+                elif "text/" in ct:
+                    parsed = response.text
+                else:
+                    json_data = response.json()
+                    if cast_to is not None:
+                        parsed = self._construct_type(cast_to, json_data)
+                    else:
+                        parsed = json_data
+            if self._raw_mode:
+                return RawResponse(parsed, response)
+            return parsed
 
         body: Any = None
         try:
@@ -334,11 +356,18 @@ class AsyncOpendcodeClient:
         request = self._client.build_request(
             method, url, params=params, json=json_body, headers=hdrs
         )
-        return await self._client.send(request, stream=True)
+        response = await self._client.send(request, stream=True)
+        if self._raw_mode:
+            return RawResponse(response, response)  # type: ignore[return-value]
+        return response
 
     # ------------------------------------------------------------------
-    # copy / with_options
+    # copy / with_options / with_raw_response
     # ------------------------------------------------------------------
+
+    @property
+    def with_raw_response(self) -> _AsyncRawResponseContextManager:
+        return _AsyncRawResponseContextManager(self)
 
     def copy(
         self,

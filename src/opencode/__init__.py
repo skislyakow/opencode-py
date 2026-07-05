@@ -31,6 +31,7 @@ from opencode._models import (
     UserMessage,
 )
 from opencode._opencode import Opencode, opencode
+from opencode._response_models import RawResponse
 from opencode._server import OpencodeServer, create_opencode_server
 from opencode._session import Session
 from opencode._tools import ToolExecutor
@@ -69,6 +70,7 @@ __all__ = [
     "OpencodeError",
     "OpencodeServer",
     "PermissionDeniedError",
+    "RawResponse",
     "RateLimitError",
     "ServerStartupTimeoutError",
     "Session",
