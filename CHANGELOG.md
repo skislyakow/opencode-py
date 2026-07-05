@@ -1,5 +1,15 @@
 # Changelog
 
+## v0.5.0 (2026-07-05)
+
+- feat(stream): add typed Pydantic models for all SSE events (~75 types) — `StreamEvent`, `parse_stream_event()`, `parse_typed_event()`, and `*Props` models for server lifecycle, session, message/part, `session.next.*`, account, catalog, permission, question, PTY, file, VCS, LSP, MCP, installation, project, command, todo, workspace, worktree, and IDE event categories
+- refactor(stream): update `ask_stream` (sync + async) to use typed property models (`MessageUpdatedProps`, `MessagePartUpdatedProps`, `MessagePartDeltaProps`, `SessionStatusProps`)
+- fix(client): add explicit type annotation for `_response` in `RawResponse`
+- feat(demo): add `live_stream_events.py` — typed SSE event inspection demo
+- docs(readme): document typed SSE events, `RawResponse`/`with_raw_response`, all demo scripts, `ruff`/`mypy` development commands
+- chore(pyproject): ignore N815 in `_stream_events.py`
+- chore(vscode): add `.vscode/settings.json` for mypy extension
+
 ## v0.4.1 (2026-07-05)
 
 - perf(client): use `model_construct()` instead of `model_validate()` for faster deserialization
