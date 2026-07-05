@@ -55,7 +55,7 @@ python live_streaming.py
 python web/server.py
 ```
 
-Открыть браузер на `http://localhost:8000`.
+Открыть браузер на `http://localhost:3000`.
 
 ## 8. Async
 
