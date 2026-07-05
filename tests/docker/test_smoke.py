@@ -30,7 +30,7 @@ def main() -> int:
         SessionResponse,
         V1SessionResponse,
     )
-    from opencode._session import SessionMessage  # noqa: F401
+    from opencode._models import SessionMessage  # noqa: F401
     from opencode._tools import ToolExecutor as ToolExecutor2  # noqa: F401
     print("  All imports OK")
 
