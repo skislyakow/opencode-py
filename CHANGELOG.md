@@ -1,5 +1,45 @@
 # Changelog
 
+## v0.3.0 (2026-07-05)
+
+- feat(client): add typed Pydantic response models (`cast_to`) to all ~75 client methods
+- feat(client): add 30+ response model classes (AgentResponse, CommandResponse, ConfigResponse, FileNode, FindMatch, VcsInfo, PtyResponse, WorktreeResponse, WorkspaceResponse, etc.)
+- feat(client): `_construct_type` handles generic `list[X]` via `get_origin/get_args` and `{"data": [...]}` response format
+- fix(client): `AgentResponse.permission` changed from `dict` to `Any` (server returns list)
+- fix(scripts): resolve mypy `no-any-return` in check-upstream.py
+- fix(docs): correct web UI port in VERIFY.md (3000, not 8000)
+- fix(tests): import SessionMessage from `_models`, not `_session`
+- chore(lint): suppress N815 camelCase warnings for `_response_models.py`
+- chore(docs): add VERIFY.md release checklist
+
+## v0.2.2 (2026-07-04)
+
+- docs: comprehensive README documentation in EN and RU (CLI flags, structured output, session methods, error hierarchy, ToolExecutor, binary management, OpencodeServer, config reference, async API, response models)
+- fix(demo): Pydantic model compatibility
+- fix(scripts): mypy errors in check-upstream.py
+- docs(readme): clarify binary auto-download behavior (NOT system-wide, NOT in PATH)
+
+## v0.2.1 (2026-07-04)
+
+- fix: rename entry point to `opencode-py` to avoid conflict with the real `opencode` binary
+
+## v0.2.0 (2026-07-03)
+
+- feat: Pydantic response models (HealthResponse, SessionResponse, FileContentResponse, V1SessionResponse)
+- feat: retry logic with exponential backoff and jitter
+- feat: typed error hierarchy (15+ classes)
+- feat: logging via OPENCODE_LOG env var
+- feat: async full support (AsyncOpendcodeClient, AsyncSession, AsyncOpendcode)
+- feat: streaming (ask_stream sync + async)
+- feat: auto_tools mode with ToolExecutor and permissions
+- feat: web UI with proxy server (zero dependencies)
+- feat: structured output (format parameter)
+- feat: OpencodeServer lifecycle management
+- feat: binary auto-download (PATH → ~/.opencode/bin/ → GitHub)
+- feat: check-upstream.py script for monitoring openapi.json changes
+- feat: `.copy()` / `.with_options()` for immutable client cloning
+- feat: py.typed marker for PEP 561 compliance
+
 ## v0.1.1 (2026-07-03)
 
 - chore: add keywords to pyproject.toml and .gitattributes

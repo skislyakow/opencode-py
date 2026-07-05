@@ -48,7 +48,9 @@ git push
 
 | Version | Date | Highlights |
 |---------|------|------------|
-| 0.2.2   | 2025-07-04 | Comprehensive README documentation, Pydantic fixes in demo.py, mypy fixes in check-upstream.py |
-| 0.2.1   | 2025-07-04 | Fix: rename entry point to `opencode-py` to avoid conflict with the real `opencode` binary |
-| 0.2.0   | 2025-07-03 | Pydantic models, retry, typed errors, logging, async, streaming, auto-tools, web UI |
-| 0.1.1   | —    | Initial PyPI release |
+| 0.3.0   | 2026-07-05 | Typed Pydantic models for all client methods (cast_to), 30+ new model classes, _construct_type handles list[X] generics and {"data": [...]} format |
+| 0.2.2   | 2026-07-04 | Comprehensive README documentation (EN/RU), Pydantic fixes in demo.py, mypy fixes |
+| 0.2.1   | 2026-07-04 | Fix: rename entry point to `opencode-py` to avoid conflict with the real `opencode` binary |
+| 0.2.0   | 2026-07-03 | Pydantic models, retry, typed errors, logging, async, streaming, auto-tools, web UI |
+| 0.1.1   | 2026-07-03 | Fix author/URLs, add keywords, Docker smoke test, badges |
+| 0.1.0   | 2026-06-30 | Initial PyPI release |
