@@ -48,6 +48,7 @@ git push
 
 | Version | Date | Highlights |
 |---------|------|------------|
+| 0.5.1   | 2026-07-05 | `session_delete_message()` endpoint + `Session.delete_message()`, `cast()` for RawResponse, Pylance fix |
 | 0.5.0   | 2026-07-05 | Typed SSE event models (~75 types, 60+ `*Props` models), `parse_stream_event()`, `parse_typed_event()`, `ask_stream` refactored to use typed models, `live_stream_events.py` demo |
 | 0.4.1   | 2026-07-05 | `model_construct()` speedup, mypy fix in demo, 23 new unit tests |
 | 0.4.0   | 2026-07-05 | `with_raw_response` pattern (RawResponse wrapper), streaming fix (no reasoning leakage, no echo, no duplicates) |

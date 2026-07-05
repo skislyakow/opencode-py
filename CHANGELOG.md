@@ -1,5 +1,12 @@
 # Changelog
 
+## v0.5.1 (2026-07-05)
+
+- feat(client): add `session_delete_message()` endpoint (`DELETE /session/{sessionID}/message/{messageID}`) — low-level + `Session.delete_message()` / `AsyncSession.delete_message()` convenience methods
+- fix(client): replace `# type: ignore` with `cast()` for `RawResponse` return (mypy clean)
+- docs(readme): document `session.delete_message()` with usage note about permanent deletion vs `revert()`/`fork()`
+- chore(vscode): add `python.defaultInterpreterPath` for Pylance import resolution
+
 ## v0.5.0 (2026-07-05)
 
 - feat(stream): add typed Pydantic models for all SSE events (~75 types) — `StreamEvent`, `parse_stream_event()`, `parse_typed_event()`, and `*Props` models for server lifecycle, session, message/part, `session.next.*`, account, catalog, permission, question, PTY, file, VCS, LSP, MCP, installation, project, command, todo, workspace, worktree, and IDE event categories
