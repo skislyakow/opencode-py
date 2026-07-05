@@ -24,13 +24,13 @@ def main() -> int:
         OpencodeError,
         RateLimitError,
     )
+    from opencode._models import SessionMessage  # noqa: F401
     from opencode._response_models import (  # noqa: F401
         FileContentResponse,
         HealthResponse,
         SessionResponse,
         V1SessionResponse,
     )
-    from opencode._models import SessionMessage  # noqa: F401
     from opencode._tools import ToolExecutor as ToolExecutor2  # noqa: F401
 
     print("  All imports OK")
