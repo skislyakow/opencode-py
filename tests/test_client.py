@@ -7,6 +7,7 @@ from opencode import APIError, OpencodeClient
 from opencode._response_models import (
     FileContentResponse,
     HealthResponse,
+    RawResponse,
     SessionResponse,
     V1SessionResponse,
 )
@@ -123,3 +124,127 @@ def test_file_read() -> None:
     result = client.file_read("/path/to/file.py")
     assert isinstance(result, FileContentResponse)
     assert result.content == "print('hello')"
+
+
+# ---------------------------------------------------------------------------
+# with_raw_response
+# ---------------------------------------------------------------------------
+
+
+def test_with_raw_response_parsed_model() -> None:
+    client = OpencodeClient(
+        base_url="http://localhost:9999",
+        httpx_client=httpx.Client(
+            transport=httpx.MockTransport(lambda _: httpx.Response(200, json={"ok": True}))
+        ),
+    )
+    with client.with_raw_response:
+        raw = client.health()
+    assert isinstance(raw, RawResponse)
+    assert isinstance(raw.parsed, HealthResponse)
+    assert raw.parsed.ok is True
+
+
+def test_with_raw_response_status_code() -> None:
+    client = OpencodeClient(
+        base_url="http://localhost:9999",
+        httpx_client=httpx.Client(
+            transport=httpx.MockTransport(lambda _: httpx.Response(201, json={"ok": True}))
+        ),
+    )
+    with client.with_raw_response:
+        raw = client.health()
+    assert raw.status_code == 201
+
+
+def test_with_raw_response_headers() -> None:
+    client = OpencodeClient(
+        base_url="http://localhost:9999",
+        httpx_client=httpx.Client(
+            transport=httpx.MockTransport(
+                lambda _: httpx.Response(
+                    200,
+                    json={"ok": True},
+                    headers={"x-custom": "test-val"},
+                )
+            )
+        ),
+    )
+    with client.with_raw_response:
+        raw = client.health()
+    assert raw.headers["x-custom"] == "test-val"
+
+
+def test_with_raw_response_content() -> None:
+    client = OpencodeClient(
+        base_url="http://localhost:9999",
+        httpx_client=httpx.Client(
+            transport=httpx.MockTransport(
+                lambda _: httpx.Response(200, json={"ok": True})
+            )
+        ),
+    )
+    with client.with_raw_response:
+        raw = client.health()
+    assert raw.content is not None
+    assert b"ok" in raw.content
+
+
+def test_with_raw_response_204() -> None:
+    client = OpencodeClient(
+        base_url="http://localhost:9999",
+        httpx_client=httpx.Client(
+            transport=httpx.MockTransport(lambda _: httpx.Response(204))
+        ),
+    )
+    with client.with_raw_response:
+        raw = client.v2_session_wait("ses_1")
+    assert isinstance(raw, RawResponse)
+    assert raw.status_code == 204
+    assert raw.parsed is None
+
+
+def test_with_raw_response_mode_resets() -> None:
+    client = OpencodeClient(
+        base_url="http://localhost:9999",
+        httpx_client=httpx.Client(
+            transport=httpx.MockTransport(lambda _: httpx.Response(200, json={"ok": True}))
+        ),
+    )
+    # Inside context — returns RawResponse
+    with client.with_raw_response:
+        raw = client.health()
+    assert isinstance(raw, RawResponse)
+    # After context — returns normal model
+    normal = client.health()
+    assert isinstance(normal, HealthResponse)
+    assert not isinstance(normal, RawResponse)
+
+
+def test_with_raw_response_still_raises_error() -> None:
+    client = OpencodeClient(
+        base_url="http://localhost:9999",
+        httpx_client=httpx.Client(
+            transport=httpx.MockTransport(
+                lambda _: httpx.Response(500, json={"message": "boom"})
+            )
+        ),
+    )
+    with client.with_raw_response:
+        with pytest.raises(APIError) as exc:
+            client.health()
+    assert exc.value.status == 500
+
+
+def test_with_raw_response_cast_to_none() -> None:
+    """Methods without cast_to should still return RawResponse with raw parsed data."""
+    client = OpencodeClient(
+        base_url="http://localhost:9999",
+        httpx_client=httpx.Client(
+            transport=httpx.MockTransport(lambda _: httpx.Response(200, json={"foo": "bar"}))
+        ),
+    )
+    with client.with_raw_response:
+        raw = client.global_dispose()
+    assert isinstance(raw, RawResponse)
+    assert raw.parsed == {"foo": "bar"}

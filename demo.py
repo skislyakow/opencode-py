@@ -51,8 +51,7 @@ print(f"    Providers/models: {providers[:5]}")
 # 8. Code search
 print("\n[8] Searching text...")
 found = client.find_text("create_opencode")
-n = len(found) if isinstance(found, list) else "?"
-print(f"    Found: {n}")
+print(f"    Found: {len(found) if isinstance(found, list) else '?'}")
 
 # 9. Send prompt (no LLM — queue only)
 print("\n[9] Sending prompt (no API key)...")
@@ -69,7 +68,13 @@ except Exception as e:
 # 10. Session context messages
 print("\n[10] Session messages...")
 ctx = client.v2_session_context(sid)
-items = ctx.get("data", []) if isinstance(ctx, dict) else ctx if isinstance(ctx, list) else []
+items = (
+    ctx.get("data", [])
+    if isinstance(ctx, dict)
+    else ctx
+    if isinstance(ctx, list)
+    else []
+)
 print(f"     Messages: {len(items)}")
 
 # 11. Extra capabilities
@@ -77,7 +82,9 @@ print("\n[11] Additional:")
 path = client.path_get()
 print(f"     Working directory: {path.worktree}")
 cmds = client.command_list()
-print(f"     Opencode commands: {len(cmds) if isinstance(cmds, list) else '?'}")
+print(
+    f"     Opencode commands: {len(cmds) if isinstance(cmds, list) else '?'}"
+)
 agents = client.app_agents()
 print(f"     Agents: {len(agents) if isinstance(agents, list) else '?'}")
 

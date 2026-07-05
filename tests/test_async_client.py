@@ -7,6 +7,7 @@ from opencode import APIError, AsyncOpendcodeClient
 from opencode._response_models import (
     FileContentResponse,
     HealthResponse,
+    RawResponse,
     SessionResponse,
     V1SessionResponse,
 )
@@ -150,3 +151,114 @@ async def test_file_read() -> None:
     result = await client.file_read("/path/to/file.py")
     assert isinstance(result, FileContentResponse)
     assert result.content == "print('hello')"
+
+
+# ---------------------------------------------------------------------------
+# with_raw_response
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_with_raw_response_parsed_model() -> None:
+    client = AsyncOpendcodeClient(
+        base_url="http://localhost:9999",
+        httpx_client=httpx.AsyncClient(
+            transport=httpx.MockTransport(lambda _: httpx.Response(200, json={"ok": True}))
+        ),
+    )
+    with client.with_raw_response:
+        raw = await client.health()
+    assert isinstance(raw, RawResponse)
+    assert isinstance(raw.parsed, HealthResponse)
+    assert raw.parsed.ok is True
+
+
+@pytest.mark.asyncio
+async def test_with_raw_response_status_code() -> None:
+    client = AsyncOpendcodeClient(
+        base_url="http://localhost:9999",
+        httpx_client=httpx.AsyncClient(
+            transport=httpx.MockTransport(lambda _: httpx.Response(201, json={"ok": True}))
+        ),
+    )
+    with client.with_raw_response:
+        raw = await client.health()
+    assert raw.status_code == 201
+
+
+@pytest.mark.asyncio
+async def test_with_raw_response_headers() -> None:
+    client = AsyncOpendcodeClient(
+        base_url="http://localhost:9999",
+        httpx_client=httpx.AsyncClient(
+            transport=httpx.MockTransport(
+                lambda _: httpx.Response(
+                    200, json={"ok": True}, headers={"x-custom": "test-val"}
+                )
+            )
+        ),
+    )
+    with client.with_raw_response:
+        raw = await client.health()
+    assert raw.headers["x-custom"] == "test-val"
+
+
+@pytest.mark.asyncio
+async def test_with_raw_response_204() -> None:
+    client = AsyncOpendcodeClient(
+        base_url="http://localhost:9999",
+        httpx_client=httpx.AsyncClient(
+            transport=httpx.MockTransport(lambda _: httpx.Response(204))
+        ),
+    )
+    with client.with_raw_response:
+        raw = await client.v2_session_wait("ses_1")
+    assert isinstance(raw, RawResponse)
+    assert raw.status_code == 204
+    assert raw.parsed is None
+
+
+@pytest.mark.asyncio
+async def test_with_raw_response_mode_resets() -> None:
+    client = AsyncOpendcodeClient(
+        base_url="http://localhost:9999",
+        httpx_client=httpx.AsyncClient(
+            transport=httpx.MockTransport(lambda _: httpx.Response(200, json={"ok": True}))
+        ),
+    )
+    with client.with_raw_response:
+        raw = await client.health()
+    assert isinstance(raw, RawResponse)
+    normal = await client.health()
+    assert isinstance(normal, HealthResponse)
+    assert not isinstance(normal, RawResponse)
+
+
+@pytest.mark.asyncio
+async def test_with_raw_response_still_raises_error() -> None:
+    client = AsyncOpendcodeClient(
+        base_url="http://localhost:9999",
+        httpx_client=httpx.AsyncClient(
+            transport=httpx.MockTransport(
+                lambda _: httpx.Response(500, json={"message": "boom"})
+            )
+        ),
+    )
+    with client.with_raw_response:
+        with pytest.raises(APIError) as exc:
+            await client.health()
+    assert exc.value.status == 500
+
+
+@pytest.mark.asyncio
+async def test_with_raw_response_cast_to_none() -> None:
+    client = AsyncOpendcodeClient(
+        base_url="http://localhost:9999",
+        httpx_client=httpx.AsyncClient(
+            transport=httpx.MockTransport(lambda _: httpx.Response(200, json={"foo": "bar"}))
+        ),
+    )
+    with client.with_raw_response:
+        raw = await client.global_dispose()
+    assert isinstance(raw, RawResponse)
+    assert raw.parsed == {"foo": "bar"}

@@ -3,6 +3,8 @@ from __future__ import annotations
 from typing import cast
 from unittest.mock import MagicMock, patch
 
+import httpx
+
 from opencode._models import AssistantMessage
 from opencode._opencode import (
     _extract_text,
@@ -149,3 +151,172 @@ def test_opencode_with_format() -> None:
     assert kwargs["format"] == {"type": "json_schema", "schema": schema}
 
     _opencode_state.clear()
+
+
+# ---------------------------------------------------------------------------
+# ask_stream
+# ---------------------------------------------------------------------------
+
+
+def _make_sse_response(events: list[str]) -> httpx.Response:
+    """Build an httpx.Response with SSE-formatted body for testing."""
+    return httpx.Response(200, text="".join(events))
+
+
+def test_ask_stream_filters_reasoning() -> None:
+    from opencode import Opencode
+
+    session = MagicMock()
+    session.id = "ses_1"
+
+    events = [
+        'data: {"type":"message.updated","properties":{"info":{"role":"user"}}}\n\n',
+        'data: {"type":"message.part.updated","properties":{"sessionID":"ses_1","part":{"id":"p_user","type":"text","text":"hi"}}}\n\n',
+        'data: {"type":"message.updated","properties":{"info":{"role":"assistant"}}}\n\n',
+        'data: {"type":"message.part.updated","properties":{"sessionID":"ses_1","part":{"id":"p_reason","type":"reasoning"}}}\n\n',
+        'data: {"type":"message.part.delta","properties":{"sessionID":"ses_1","partID":"p_reason","delta":"thinking step 1"}}\n\n',
+        'data: {"type":"message.part.delta","properties":{"sessionID":"ses_1","partID":"p_reason","delta":"thinking step 2"}}\n\n',
+        'data: {"type":"message.part.updated","properties":{"sessionID":"ses_1","part":{"id":"p_reason","type":"reasoning","text":"thinking step 1thinking step 2"}}}\n\n',
+        'data: {"type":"message.part.updated","properties":{"sessionID":"ses_1","part":{"id":"p_text","type":"text","text":""}}}\n\n',
+        'data: {"type":"message.part.delta","properties":{"sessionID":"ses_1","partID":"p_text","delta":"Hello"}}\n\n',
+        'data: {"type":"message.part.delta","properties":{"sessionID":"ses_1","partID":"p_text","delta":" world"}}\n\n',
+        'data: {"type":"message.part.updated","properties":{"sessionID":"ses_1","part":{"id":"p_text","type":"text","text":"Hello world"}}}\n\n',
+        'data: {"type":"session.status","properties":{"status":{"type":"idle"}}}\n\n',
+    ]
+    mock_client = MagicMock()
+    mock_client.event_subscribe.return_value = _make_sse_response(events)
+    mock_client.session_send.return_value = MagicMock()
+
+    ai = Opencode(model="opencode/big-pickle")
+    ai._client = mock_client
+    chunks = list(ai.ask_stream("hello", session=session))
+
+    assert chunks == ["Hello", " world"]
+
+
+def test_ask_stream_no_reasoning() -> None:
+    from opencode import Opencode
+
+    session = MagicMock()
+    session.id = "ses_1"
+
+    events = [
+        'data: {"type":"message.updated","properties":{"info":{"role":"user"}}}\n\n',
+        'data: {"type":"message.part.updated","properties":{"sessionID":"ses_1","part":{"id":"p_user","type":"text","text":"hi"}}}\n\n',
+        'data: {"type":"message.updated","properties":{"info":{"role":"assistant"}}}\n\n',
+        'data: {"type":"message.part.updated","properties":{"sessionID":"ses_1","part":{"id":"p_text","type":"text","text":""}}}\n\n',
+        'data: {"type":"message.part.delta","properties":{"sessionID":"ses_1","partID":"p_text","delta":"Hi"}}\n\n',
+        'data: {"type":"message.part.delta","properties":{"sessionID":"ses_1","partID":"p_text","delta":" there"}}\n\n',
+        'data: {"type":"session.status","properties":{"status":{"type":"idle"}}}\n\n',
+    ]
+    mock_client = MagicMock()
+    mock_client.event_subscribe.return_value = _make_sse_response(events)
+    mock_client.session_send.return_value = MagicMock()
+
+    ai = Opencode(model="opencode/big-pickle")
+    ai._client = mock_client
+    chunks = list(ai.ask_stream("hello", session=session))
+
+    assert chunks == ["Hi", " there"]
+
+
+def test_ask_stream_only_reasoning_yields_nothing() -> None:
+    from opencode import Opencode
+
+    session = MagicMock()
+    session.id = "ses_1"
+
+    events = [
+        'data: {"type":"message.updated","properties":{"info":{"role":"user"}}}\n\n',
+        'data: {"type":"message.part.updated","properties":{"sessionID":"ses_1","part":{"id":"p_user","type":"text","text":"hi"}}}\n\n',
+        'data: {"type":"message.updated","properties":{"info":{"role":"assistant"}}}\n\n',
+        'data: {"type":"message.part.updated","properties":{"sessionID":"ses_1","part":{"id":"p_r","type":"reasoning"}}}\n\n',
+        'data: {"type":"message.part.delta","properties":{"sessionID":"ses_1","partID":"p_r","delta":"thinking"}}\n\n',
+        'data: {"type":"message.part.updated","properties":{"sessionID":"ses_1","part":{"id":"p_r","type":"reasoning","text":"thinking"}}}\n\n',
+        'data: {"type":"session.status","properties":{"status":{"type":"idle"}}}\n\n',
+    ]
+    mock_client = MagicMock()
+    mock_client.event_subscribe.return_value = _make_sse_response(events)
+    mock_client.session_send.return_value = MagicMock()
+
+    ai = Opencode(model="opencode/big-pickle")
+    ai._client = mock_client
+    chunks = list(ai.ask_stream("hello", session=session))
+
+    assert chunks == []
+
+
+def test_ask_stream_no_user_echo() -> None:
+    """User's text part should never be yielded."""
+    from opencode import Opencode
+
+    session = MagicMock()
+    session.id = "ses_1"
+
+    events = [
+        'data: {"type":"message.updated","properties":{"info":{"role":"user"}}}\n\n',
+        'data: {"type":"message.part.updated","properties":{"sessionID":"ses_1","part":{"id":"p_user","type":"text","text":"hello there"}}}\n\n',
+        'data: {"type":"message.updated","properties":{"info":{"role":"assistant"}}}\n\n',
+        'data: {"type":"message.part.updated","properties":{"sessionID":"ses_1","part":{"id":"p_t","type":"text","text":""}}}\n\n',
+        'data: {"type":"message.part.delta","properties":{"sessionID":"ses_1","partID":"p_t","delta":"Response"}}\n\n',
+        'data: {"type":"session.status","properties":{"status":{"type":"idle"}}}\n\n',
+    ]
+    mock_client = MagicMock()
+    mock_client.event_subscribe.return_value = _make_sse_response(events)
+    mock_client.session_send.return_value = MagicMock()
+
+    ai = Opencode(model="opencode/big-pickle")
+    ai._client = mock_client
+    chunks = list(ai.ask_stream("hello", session=session))
+
+    assert chunks == ["Response"]
+
+
+def test_ask_stream_other_session_skipped() -> None:
+    from opencode import Opencode
+
+    session = MagicMock()
+    session.id = "ses_1"
+
+    events = [
+        'data: {"type":"message.updated","properties":{"info":{"role":"user"}}}\n\n',
+        'data: {"type":"message.part.updated","properties":{"sessionID":"ses_other","part":{"id":"p_t","type":"text","text":"other"}}}\n\n',
+        'data: {"type":"message.updated","properties":{"info":{"role":"assistant"}}}\n\n',
+        'data: {"type":"message.part.updated","properties":{"sessionID":"ses_1","part":{"id":"p_t","type":"text","text":""}}}\n\n',
+        'data: {"type":"message.part.delta","properties":{"sessionID":"ses_1","partID":"p_t","delta":"Mine"}}\n\n',
+        'data: {"type":"session.status","properties":{"status":{"type":"idle"}}}\n\n',
+    ]
+    mock_client = MagicMock()
+    mock_client.event_subscribe.return_value = _make_sse_response(events)
+    mock_client.session_send.return_value = MagicMock()
+
+    ai = Opencode(model="opencode/big-pickle")
+    ai._client = mock_client
+    chunks = list(ai.ask_stream("hello", session=session))
+
+    assert chunks == ["Mine"]
+
+
+def test_ask_stream_no_deltas_falls_back_to_part_text() -> None:
+    """If no deltas arrive, yield from message.part.updated full text."""
+    from opencode import Opencode
+
+    session = MagicMock()
+    session.id = "ses_1"
+
+    events = [
+        'data: {"type":"message.updated","properties":{"info":{"role":"user"}}}\n\n',
+        'data: {"type":"message.part.updated","properties":{"sessionID":"ses_1","part":{"id":"p_u","type":"text","text":"hi"}}}\n\n',
+        'data: {"type":"message.updated","properties":{"info":{"role":"assistant"}}}\n\n',
+        'data: {"type":"message.part.updated","properties":{"sessionID":"ses_1","part":{"id":"p_t","type":"text","text":"Full response"}}}\n\n',
+        'data: {"type":"session.status","properties":{"status":{"type":"idle"}}}\n\n',
+    ]
+    mock_client = MagicMock()
+    mock_client.event_subscribe.return_value = _make_sse_response(events)
+    mock_client.session_send.return_value = MagicMock()
+
+    ai = Opencode(model="opencode/big-pickle")
+    ai._client = mock_client
+    chunks = list(ai.ask_stream("hello", session=session))
+
+    assert chunks == ["Full response"]
