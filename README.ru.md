@@ -84,6 +84,55 @@ with Opencode() as ai:
         print(chunk, end="")
 ```
 
+`ask_stream()` подписывается на SSE (`/event`) эндпоинт сервера, отправляет
+запрос и выдаёт каждый текстовый фрагмент по мере поступления. Reasoning-блоки,
+эхо пользователя и дублирующийся текст автоматически фильтруются.
+
+#### Типизированные события стриминга
+
+Для продвинутого использования SDK предоставляет полный SSE-поток в виде
+типизированных Pydantic-моделей через `parse_stream_event()`:
+
+```python
+from opencode._stream_events import (
+    MessagePartDeltaProps,
+    MessagePartUpdatedProps,
+    MessageUpdatedProps,
+    SessionStatusProps,
+    parse_stream_event,
+)
+
+with Opencode() as ai:
+    session = ai.create_session()
+    response = ai.client.event_subscribe()  # сырой SSE поток
+    ai.client.session_send(session.id, {"parts": [{"type": "text", "text": "Hi"}]})
+
+    for line in response.iter_lines():
+        if not line.startswith("data: "):
+            continue
+        event = parse_stream_event(line[6:])
+        props = event.properties
+
+        # Пропускаем события других сессий
+        if props.get("sessionID") not in (None, session.id):
+            continue
+
+        if event.type == "message.part.delta":
+            p = MessagePartDeltaProps.model_construct(**props)
+            print(p.delta, end="")  # типизированный доступ к .delta, .partID и т.д.
+
+        elif event.type == "session.status":
+            p = SessionStatusProps.model_construct(**props)
+            if p.status.get("type") == "idle":
+                break
+```
+
+Работает для всех ~75 типов событий: `message.updated`, `session.status`,
+`session.next.text.delta`, `permission.asked`, `question.asked`, `file.edited`
+и других. Используйте `parse_typed_event()` для автоматической валидации.
+
+Полный пример в [`live_stream_events.py`](#интерактивный-диалог).
+
 ### Диалоги
 
 ```python
@@ -204,6 +253,26 @@ client2 = client.copy(base_url="http://other:4096", timeout=60.0)
 faster = client.with_options(timeout=10.0, max_retries=0)
 ```
 
+#### Сырой HTTP ответ
+
+Оборачивает любой метод клиента, чтобы также вернуть сырой `httpx.Response`:
+
+```python
+from opencode import RawResponse
+
+with client.with_raw_response:
+    raw: RawResponse = client.health()
+
+raw.status_code              # 200
+raw.headers                  # httpx.Headers
+raw.content                  # bytes
+raw.parsed                   # HealthResponse (типизированная модель)
+raw.response                 # httpx.Response (полный)
+```
+
+Контекстный менеджер сбрасывается автоматически после одного вызова. Работает
+с любым методом клиента (sync и async). См. `live_raw.py` для полного примера.
+
 ### Retry & обработка ошибок
 
 Типизированная иерархия исключений. Все ошибки импортируются из `opencode`:
@@ -298,10 +367,15 @@ python web/server.py
 ### Интерактивный диалог
 
 ```bash
-python live.py
+python live.py            # синхронный многошаговый диалог
+python live_async.py      # асинхронный многошаговый диалог
+python live_streaming.py  # стриминг диалог (переиспользование сессии)
+python live_raw.py        # демо with_raw_response (7 сценариев)
+python live_stream_events.py "Ваш запрос"  # инспекция SSE событий
+python demo.py            # полное тестирование API (38 эндпоинтов)
 ```
 
-Многострочный диалог с `keep=True`, сервер чистится при выходе (`atexit`).
+Все скрипты чистят сервер при выходе через `atexit`.
 
 ### ToolExecutor (справочник)
 
@@ -460,6 +534,10 @@ pip install -e ".[dev]"
 
 # Запуск тестов
 pytest
+
+# Линтинг и проверка типов
+ruff check src/
+mypy src/
 
 # Сборка
 python -m build --wheel

@@ -85,6 +85,55 @@ with Opencode() as ai:
         print(chunk, end="")
 ```
 
+`ask_stream()` subscribes to the server's SSE (`/event`) endpoint, sends the
+prompt, and yields each text chunk as it arrives. Reasoning blocks, user echo,
+and duplicate text are automatically filtered out.
+
+#### Typed stream events
+
+For advanced use, the SDK exposes the full SSE event stream as typed Pydantic
+models via `parse_stream_event()`:
+
+```python
+from opencode._stream_events import (
+    MessagePartDeltaProps,
+    MessagePartUpdatedProps,
+    MessageUpdatedProps,
+    SessionStatusProps,
+    parse_stream_event,
+)
+
+with Opencode() as ai:
+    session = ai.create_session()
+    response = ai.client.event_subscribe()  # raw SSE stream
+    ai.client.session_send(session.id, {"parts": [{"type": "text", "text": "Hi"}]})
+
+    for line in response.iter_lines():
+        if not line.startswith("data: "):
+            continue
+        event = parse_stream_event(line[6:])
+        props = event.properties
+
+        # Skip events for other sessions
+        if props.get("sessionID") not in (None, session.id):
+            continue
+
+        if event.type == "message.part.delta":
+            p = MessagePartDeltaProps.model_construct(**props)
+            print(p.delta, end="")  # typed access to .delta, .partID, etc.
+
+        elif event.type == "session.status":
+            p = SessionStatusProps.model_construct(**props)
+            if p.status.get("type") == "idle":
+                break
+```
+
+This works for all ~75 event types: `message.updated`, `session.status`,
+`session.next.text.delta`, `permission.asked`, `question.asked`, `file.edited`,
+and more. Use `parse_typed_event()` for automatic property validation.
+
+See [`live_stream_events.py`](#interactive-dialog) for a complete demo.
+
 ### Conversations
 
 ```python
@@ -205,6 +254,26 @@ client2 = client.copy(base_url="http://other:4096", timeout=60.0)
 faster = client.with_options(timeout=10.0, max_retries=0)
 ```
 
+#### Raw HTTP response
+
+Wraps any client method to also return the raw `httpx.Response`:
+
+```python
+from opencode import RawResponse
+
+with client.with_raw_response:
+    raw: RawResponse = client.health()
+
+raw.status_code              # 200
+raw.headers                  # httpx.Headers
+raw.content                  # bytes
+raw.parsed                   # HealthResponse (typed model)
+raw.response                 # httpx.Response (full)
+```
+
+The context manager resets automatically after one call. Works with every
+client method (sync and async). See `live_raw.py` for a full demo.
+
 ### Retry & error handling
 
 Typed exception hierarchy. All errors are importable from `opencode`:
@@ -299,10 +368,15 @@ Built-in HTTP server + proxy to `opencode serve` — no extra dependencies.
 ### Interactive dialog
 
 ```bash
-python live.py
+python live.py            # sync multi-turn dialog
+python live_async.py      # async multi-turn dialog
+python live_streaming.py  # streaming dialog (reuse session)
+python live_raw.py        # with_raw_response demo (7 scenarios)
+python live_stream_events.py "Your prompt"  # typed SSE event inspection
+python demo.py            # full API coverage test (38 endpoints)
 ```
 
-Multi-turn dialog with `keep=True`, server cleaned up on exit via `atexit`.
+All scripts clean up the server on exit via `atexit`.
 
 ### ToolExecutor reference
 
@@ -461,6 +535,10 @@ pip install -e ".[dev]"
 
 # Run tests
 pytest
+
+# Lint & typecheck
+ruff check src/
+mypy src/
 
 # Build
 python -m build --wheel
