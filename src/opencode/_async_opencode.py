@@ -164,7 +164,9 @@ class AsyncOpendcode:
         # Send prompt (V1 sync)
         await self.client.session_send(session.id, body)
 
-        seen_parts: set[str] = set()
+        part_types: dict[str, str] = {}
+        parts_with_deltas: set[str] = set()
+        assistant_started = False
 
         async for line in response.aiter_lines():
             if not line.startswith("data: "):
@@ -178,24 +180,32 @@ class AsyncOpendcode:
             if sid is not None and sid != session.id:
                 continue
 
-            if event_type == "message.part.delta":
-                if props.get("field") == "text":
-                    part_id = props.get("partID", "")
-                    delta = props.get("delta", "")
-                    if delta:
-                        seen_parts.add(part_id)
-                        yield delta
+            if event_type == "message.updated":
+                info = props.get("info", {})
+                if info.get("role") == "assistant":
+                    assistant_started = True
 
             elif event_type == "message.part.updated":
                 part = props.get("part", {})
                 part_id = part.get("id", "")
-                if part_id not in seen_parts and part.get("type") == "text":
+                part_type = part.get("type", "")
+                if part_id and part_type:
+                    part_types[part_id] = part_type
+                if assistant_started and part_type == "text":
                     text = part.get("text", "")
-                    if text:
-                        seen_parts.add(part_id)
+                    if text and part_id not in parts_with_deltas:
                         yield text
 
-            elif event_type == "session.status":
+            elif event_type == "message.part.delta":
+                part_id = props.get("partID", "")
+                part_type = part_types.get(part_id)
+                if assistant_started and part_type == "text":
+                    delta = props.get("delta", "")
+                    if delta:
+                        parts_with_deltas.add(part_id)
+                        yield delta
+
+            elif event_type in ("session.status",):
                 status = props.get("status", {})
                 if isinstance(status, dict) and status.get("type") == "idle":
                     break
