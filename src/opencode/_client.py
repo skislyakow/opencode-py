@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import random
 import time
-from typing import Any, TypeVar, cast
+from typing import Any, TypeVar, cast, get_args, get_origin
 
 import httpx
 
@@ -194,10 +194,21 @@ class OpencodeClient:
     def _construct_type(self, model_class: type[_T] | None, data: Any) -> _T | Any:
         if model_class is None:
             return data
-        if isinstance(data, list):
-            return [self._construct_type(model_class, item) for item in data]
+        origin = get_origin(model_class)
+        args = get_args(model_class)
+        if origin is list and args:
+            inner = args[0]
+            if isinstance(data, list):
+                return [self._construct_type(inner, item) for item in data]
+            if isinstance(data, dict) and "data" in data:
+                inner_list = data["data"]
+                if isinstance(inner_list, list):
+                    return [self._construct_type(inner, item) for item in inner_list]
+            return cast(_T, data)
         if isinstance(data, dict):
             return cast(_T, cast(Any, model_class).model_validate(data))
+        if isinstance(data, list):
+            return [self._construct_type(model_class, item) for item in data]
         if data is None:
             return None
         return data

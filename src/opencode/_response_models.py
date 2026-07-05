@@ -48,18 +48,21 @@ class SessionResponse(OpencodeBaseModel):
 
 class V2SessionsResponse(OpencodeBaseModel):
     """Response from GET /api/session."""
+
     cursor: dict[str, Any] | None = None
     items: list[dict[str, Any]] = []
 
 
 class V2SessionMessagesResponse(OpencodeBaseModel):
     """Response from GET /api/session/:id/message."""
+
     cursor: dict[str, Any] | None = None
     items: list[dict[str, Any]] = []
 
 
 class V1SessionResponse(OpencodeBaseModel):
     """Response from POST /session/:id/message (V1)."""
+
     parts: list[dict[str, Any]] = []
     info: dict[str, Any] = {}
     structured: Any = None
@@ -84,6 +87,7 @@ class MessagePart(OpencodeBaseModel):
 
 class ModelV2Info(OpencodeBaseModel):
     """Response from GET /api/model."""
+
     id: str = ""
     providerID: str | None = None
     name: str | None = None
@@ -92,6 +96,7 @@ class ModelV2Info(OpencodeBaseModel):
 
 class ProviderV2Info(OpencodeBaseModel):
     """Response from GET /api/provider."""
+
     id: str = ""
     name: str | None = None
     description: str | None = None
@@ -112,6 +117,7 @@ class FileContentResponse(OpencodeBaseModel):
 
 class FileNode(OpencodeBaseModel):
     """Response item from GET /file."""
+
     absolute: str = ""
     ignored: bool = False
     name: str = ""
@@ -121,6 +127,7 @@ class FileNode(OpencodeBaseModel):
 
 class FileStatus(OpencodeBaseModel):
     """Response item from GET /file/status."""
+
     path: str = ""
     status: str = ""
     added: int = 0
@@ -134,6 +141,7 @@ class FileStatus(OpencodeBaseModel):
 
 class FindMatch(OpencodeBaseModel):
     """Response item from GET /find."""
+
     path: dict[str, Any] | None = None
     lines: dict[str, Any] | None = None
     line_number: int = 0
@@ -143,6 +151,7 @@ class FindMatch(OpencodeBaseModel):
 
 class Symbol(OpencodeBaseModel):
     """Response item from GET /find/symbol."""
+
     kind: int = 0
     location: dict[str, Any] | None = None
     name: str = ""
@@ -155,12 +164,14 @@ class Symbol(OpencodeBaseModel):
 
 class VcsInfo(OpencodeBaseModel):
     """Response from GET /vcs."""
+
     branch: str | None = None
     default_branch: str | None = None
 
 
 class VcsFileStatus(OpencodeBaseModel):
     """Response item from GET /vcs/status."""
+
     file: str = ""
     status: str = ""
     additions: int = 0
@@ -169,6 +180,7 @@ class VcsFileStatus(OpencodeBaseModel):
 
 class VcsFileDiff(OpencodeBaseModel):
     """Response item from GET /vcs/diff."""
+
     file: str = ""
     status: str | None = None
     additions: int = 0
@@ -192,6 +204,7 @@ class AuthResponse(OpencodeBaseModel):
 
 class ProviderResponse(OpencodeBaseModel):
     """Response from GET /provider."""
+
     all: list[dict[str, Any]] = []
     default: dict[str, Any] = {}
     connected: list[str] = []
@@ -230,6 +243,7 @@ class ToolIDs(OpencodeBaseModel):
 
 class PermissionRequestResponse(OpencodeBaseModel):
     """Response item from GET /permission."""
+
     id: str = ""
     sessionID: str = ""
     permission: str = ""
@@ -246,6 +260,7 @@ class PermissionRequestResponse(OpencodeBaseModel):
 
 class QuestionRequestResponse(OpencodeBaseModel):
     """Response item from GET /question."""
+
     id: str = ""
     sessionID: str = ""
     questions: list[dict[str, Any]] = []
@@ -259,6 +274,7 @@ class QuestionRequestResponse(OpencodeBaseModel):
 
 class PtyResponse(OpencodeBaseModel):
     """Response from PTY endpoints."""
+
     id: str = ""
     command: str = ""
     args: list[str] = []
@@ -270,6 +286,7 @@ class PtyResponse(OpencodeBaseModel):
 
 class PtyShell(OpencodeBaseModel):
     """Response item from GET /pty/shells."""
+
     path: str = ""
     name: str = ""
     acceptable: bool = False
@@ -282,6 +299,7 @@ class PtyShell(OpencodeBaseModel):
 
 class PathResponse(OpencodeBaseModel):
     """Response from GET /path."""
+
     config: str = ""
     directory: str = ""
     home: str = ""
@@ -296,6 +314,7 @@ class PathResponse(OpencodeBaseModel):
 
 class CommandResponse(OpencodeBaseModel):
     """Response item from GET /command."""
+
     name: str = ""
     description: str = ""
     template: str = ""
@@ -313,10 +332,11 @@ class CommandResponse(OpencodeBaseModel):
 
 class AgentResponse(OpencodeBaseModel):
     """Response item from GET /agent."""
+
     name: str = ""
     mode: str = ""
     options: dict[str, Any] = {}
-    permission: dict[str, Any] = {}
+    permission: Any = []
     description: str | None = None
     color: str | None = None
     hidden: bool | None = None
@@ -336,6 +356,7 @@ class AgentResponse(OpencodeBaseModel):
 
 class LSPStatusResponse(OpencodeBaseModel):
     """Response item from GET /lsp."""
+
     id: str = ""
     name: str = ""
     root: str = ""
@@ -344,6 +365,7 @@ class LSPStatusResponse(OpencodeBaseModel):
 
 class FormatterStatusResponse(OpencodeBaseModel):
     """Response item from GET /formatter."""
+
     name: str = ""
     enabled: bool = False
     extensions: list[str] = []
@@ -356,6 +378,7 @@ class FormatterStatusResponse(OpencodeBaseModel):
 
 class ProjectResponse(OpencodeBaseModel):
     """Response from project endpoints."""
+
     id: str = ""
     name: str | None = None
     directory: str | None = None
@@ -374,6 +397,7 @@ class ProjectResponse(OpencodeBaseModel):
 
 class WorktreeResponse(OpencodeBaseModel):
     """Response from worktree endpoints."""
+
     directory: str = ""
     name: str = ""
     branch: str | None = None
@@ -386,6 +410,7 @@ class WorktreeResponse(OpencodeBaseModel):
 
 class WorkspaceResponse(OpencodeBaseModel):
     """Response from workspace endpoints."""
+
     id: str = ""
     name: str = ""
     projectID: str = ""
@@ -407,11 +432,13 @@ class SyncStartResponse(OpencodeBaseModel):
 
 class SyncStealResponse(OpencodeBaseModel):
     """Response from POST /sync/steal."""
+
     sessionID: str | None = None
 
 
 class SyncReplayResponse(OpencodeBaseModel):
     """Response from POST /sync/replay."""
+
     sessionID: str | None = None
 
 
@@ -422,6 +449,7 @@ class SyncReplayResponse(OpencodeBaseModel):
 
 class TUINextResponse(OpencodeBaseModel):
     """Response from GET /tui/control/next."""
+
     path: str = ""
     body: Any = None
 
@@ -433,6 +461,7 @@ class TUINextResponse(OpencodeBaseModel):
 
 class TodoResponse(OpencodeBaseModel):
     """Response item from GET /session/:id/todo."""
+
     content: str = ""
     status: str = ""
     priority: str = ""
@@ -445,6 +474,7 @@ class TodoResponse(OpencodeBaseModel):
 
 class SnapshotFileDiffResponse(OpencodeBaseModel):
     """Response item from GET /session/:id/diff."""
+
     file: str | None = None
     status: str | None = None
     additions: int = 0
@@ -459,5 +489,6 @@ class SnapshotFileDiffResponse(OpencodeBaseModel):
 
 class MessageResponse(OpencodeBaseModel):
     """Response from session message endpoints."""
+
     info: dict[str, Any] = {}
     parts: list[dict[str, Any]] = []
