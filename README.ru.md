@@ -159,6 +159,7 @@ with Opencode() as ai:
 
     # Управление
     session.abort()                # прервать генерацию
+    session.delete_message("msg_xxx")  # перманентно удалить сообщение
     session.compact()              # сжать историю
     session.fork()                 # форкнуть в новую сессию
 
@@ -166,6 +167,8 @@ with Opencode() as ai:
     session.diff()                 # файловые изменения от AI
     session.todo()                 # оставшиеся задачи
 ```
+
+Удаление сообщения перманентно — сообщение и его части удаляются без отката файловых изменений. Чтобы отменить изменения, сделанные сообщением, используйте `session.revert()` (или `session.fork()` для ответвления).
 
 ### Multi-turn (keep mode)
 

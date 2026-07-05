@@ -160,6 +160,7 @@ with Opencode() as ai:
 
     # Control
     session.abort()                # abort current generation
+    session.delete_message("msg_xxx")  # permanently remove a message
     session.compact()              # compact conversation
     session.fork()                 # fork into new session
 
@@ -167,6 +168,8 @@ with Opencode() as ai:
     session.diff()                 # file changes made by AI
     session.todo()                 # remaining TODOs
 ```
+
+Message deletion is permanent — the message and its parts are removed without reverting file changes. To undo changes made by a message, use `session.revert()` instead (or `session.fork()` to branch).
 
 ### Multi-turn (keep mode)
 
