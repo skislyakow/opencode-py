@@ -22,7 +22,7 @@ class RawResponse(Generic[_T]):
 
     def __init__(self, parsed: _T, response: httpx.Response) -> None:
         self.parsed = parsed
-        self._response = response
+        self._response: httpx.Response = response
 
     @property
     def status_code(self) -> int:

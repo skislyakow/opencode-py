@@ -163,7 +163,9 @@ async def test_with_raw_response_parsed_model() -> None:
     client = AsyncOpendcodeClient(
         base_url="http://localhost:9999",
         httpx_client=httpx.AsyncClient(
-            transport=httpx.MockTransport(lambda _: httpx.Response(200, json={"ok": True}))
+            transport=httpx.MockTransport(
+                lambda _: httpx.Response(200, json={"ok": True})
+            )
         ),
     )
     with client.with_raw_response:
@@ -178,7 +180,9 @@ async def test_with_raw_response_status_code() -> None:
     client = AsyncOpendcodeClient(
         base_url="http://localhost:9999",
         httpx_client=httpx.AsyncClient(
-            transport=httpx.MockTransport(lambda _: httpx.Response(201, json={"ok": True}))
+            transport=httpx.MockTransport(
+                lambda _: httpx.Response(201, json={"ok": True})
+            )
         ),
     )
     with client.with_raw_response:
@@ -223,7 +227,9 @@ async def test_with_raw_response_mode_resets() -> None:
     client = AsyncOpendcodeClient(
         base_url="http://localhost:9999",
         httpx_client=httpx.AsyncClient(
-            transport=httpx.MockTransport(lambda _: httpx.Response(200, json={"ok": True}))
+            transport=httpx.MockTransport(
+                lambda _: httpx.Response(200, json={"ok": True})
+            )
         ),
     )
     with client.with_raw_response:
@@ -255,7 +261,9 @@ async def test_with_raw_response_cast_to_none() -> None:
     client = AsyncOpendcodeClient(
         base_url="http://localhost:9999",
         httpx_client=httpx.AsyncClient(
-            transport=httpx.MockTransport(lambda _: httpx.Response(200, json={"foo": "bar"}))
+            transport=httpx.MockTransport(
+                lambda _: httpx.Response(200, json={"foo": "bar"})
+            )
         ),
     )
     with client.with_raw_response:

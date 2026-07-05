@@ -34,6 +34,14 @@ from opencode._opencode import Opencode, opencode
 from opencode._response_models import RawResponse
 from opencode._server import OpencodeServer, create_opencode_server
 from opencode._session import Session
+from opencode._stream_events import (
+    MessagePartDeltaProps,
+    MessagePartUpdatedProps,
+    MessageUpdatedProps,
+    SessionStatusProps,
+    StreamEvent,
+    parse_stream_event,
+)
 from opencode._tools import ToolExecutor
 
 setup_logging()
@@ -74,6 +82,11 @@ __all__ = [
     "RateLimitError",
     "ServerStartupTimeoutError",
     "Session",
+    "MessagePartDeltaProps",
+    "MessagePartUpdatedProps",
+    "MessageUpdatedProps",
+    "SessionStatusProps",
+    "StreamEvent",
     "ToolExecutor",
     "SessionInfo",
     "SessionMessage",
@@ -81,4 +94,5 @@ __all__ = [
     "UserMessage",
     "create_opencode_server",
     "opencode",
+    "parse_stream_event",
 ]

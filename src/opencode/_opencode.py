@@ -165,9 +165,15 @@ class Opencode:
         files: list[dict[str, Any]] | None = None,
         session: Session | None = None,
     ) -> Iterator[str]:
-        import json
-
         import httpx
+
+        from opencode._stream_events import (
+            MessagePartDeltaProps,
+            MessagePartUpdatedProps,
+            MessageUpdatedProps,
+            SessionStatusProps,
+            parse_stream_event,
+        )
 
         if session is None:
             session = self.create_session()
@@ -191,46 +197,47 @@ class Opencode:
         for line in response.iter_lines():
             if not line.startswith("data: "):
                 continue
-            payload = json.loads(line[6:])
-            event_type = payload.get("type")
-            props = payload.get("properties", {})
+            event = parse_stream_event(line[6:])
+            props = event.properties
 
             # Skip events for other sessions
             sid = props.get("sessionID")
             if sid is not None and sid != session.id:
                 continue
 
-            if event_type == "message.updated":
-                info = props.get("info", {})
-                if info.get("role") == "assistant":
+            if event.type == "message.updated":
+                p_msg = MessageUpdatedProps.model_construct(**props)
+                if p_msg.info.get("role") == "assistant":
                     assistant_started = True
 
-            elif event_type == "message.part.updated":
-                part = props.get("part", {})
-                part_id = part.get("id", "")
-                part_type = part.get("type", "")
+            elif event.type == "message.part.updated":
+                p_part = MessagePartUpdatedProps.model_construct(**props)
+                part_id = p_part.part.get("id", "")
+                part_type = p_part.part.get("type", "")
                 if part_id and part_type:
                     part_types[part_id] = part_type
                 if assistant_started and part_type == "text":
-                    text = part.get("text", "")
+                    text = p_part.part.get("text", "")
                     if text and part_id not in parts_with_deltas:
                         yield text
 
-            elif event_type == "message.part.delta":
-                part_id = props.get("partID", "")
+            elif event.type == "message.part.delta":
+                p_delta = MessagePartDeltaProps.model_construct(**props)
+                part_id = p_delta.partID
                 part_type = part_types.get(part_id)
                 if assistant_started and part_type == "text":
-                    delta = props.get("delta", "")
+                    delta = p_delta.delta
                     if delta:
                         parts_with_deltas.add(part_id)
                         yield delta
 
-            elif event_type in ("session.status",):
-                status = props.get("status", {})
+            elif event.type in ("session.status",):
+                p_status = SessionStatusProps.model_construct(**props)
+                status = p_status.status
                 if isinstance(status, dict) and status.get("type") == "idle":
                     break
 
-            elif event_type == "session.idle":
+            elif event.type == "session.idle":
                 break
 
 

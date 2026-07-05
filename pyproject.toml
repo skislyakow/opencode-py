@@ -64,6 +64,7 @@ select = ["E", "F", "I", "N", "W", "UP"]
 
 [tool.ruff.lint.per-file-ignores]
 "src/opencode/_response_models.py" = ["N815"]
+"src/opencode/_stream_events.py" = ["N815"]
 "tests/*" = ["E501"]
 
 [tool.mypy]
