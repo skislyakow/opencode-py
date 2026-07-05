@@ -1,4 +1,5 @@
 {
+    "python.defaultInterpreterPath": "C:\\Users\\skisl\\AppData\\Local\\Programs\\Python\\Python310\\python.exe",
     "mypy-type-checker.args": [
         "--config-file",
         "pyproject.toml"
