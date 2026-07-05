@@ -1,5 +1,12 @@
 # Changelog
 
+## v0.4.0 (2026-07-05)
+
+- feat(client): add `with_raw_response` context manager — returns `RawResponse[T]` with `.parsed`, `.status_code`, `.headers`, `.content` for every client method
+- feat(client): add `RawResponse[T]` generic wrapper class (sync + async support)
+- fix(streaming): filter out `"reasoning"` deltas, user message echo, and duplicate text in `ask_stream`
+- chore(demo): add `live_raw.py` — interactive demo of `with_raw_response` with 7 scenarios
+
 ## v0.3.0 (2026-07-05)
 
 - feat(client): add typed Pydantic response models (`cast_to`) to all ~75 client methods
