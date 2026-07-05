@@ -32,10 +32,12 @@ def main() -> int:
     )
     from opencode._models import SessionMessage  # noqa: F401
     from opencode._tools import ToolExecutor as ToolExecutor2  # noqa: F401
+
     print("  All imports OK")
 
     print("\nStep 2: Verify package metadata...")
     from importlib.metadata import version
+
     v = version("opencode-py")
     print(f"  Package version: {v}")
     print("  OK")

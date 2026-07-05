@@ -25,7 +25,9 @@ def get_inline_delivery_enum(spec: dict[str, Any]) -> list[str] | None:
     """Extract the delivery enum from the v2 prompt endpoint."""
     try:
         prompt = spec["paths"]["/api/session/{sessionID}/prompt"]["post"]
-        props = prompt["requestBody"]["content"]["application/json"]["schema"]["properties"]
+        props = prompt["requestBody"]["content"]["application/json"]["schema"][
+            "properties"
+        ]
         delivery = props["delivery"]
         return cast(list[str] | None, delivery.get("enum"))
     except Exception:
@@ -41,7 +43,9 @@ def main() -> None:
         return
 
     info = upstream.get("info", {})
-    print(f"Upstream info: title={info.get('title')}, version={info.get('version')}")
+    print(
+        f"Upstream info: title={info.get('title')}, version={info.get('version')}"
+    )
 
     # Check 1: delivery enum
     delivery = get_inline_delivery_enum(upstream)
@@ -63,7 +67,9 @@ def main() -> None:
         elif "queue" in delivery:
             print("  => No change needed (still 'queue' compatible).")
     else:
-        changes_needed.append("Delivery enum not found in spec — endpoint may have changed.")
+        changes_needed.append(
+            "Delivery enum not found in spec — endpoint may have changed."
+        )
 
     # Check 2: structured output format
     schemas = upstream.get("components", {}).get("schemas", {})
@@ -72,11 +78,15 @@ def main() -> None:
         # Check inline in V1 session/message endpoint
         try:
             v1 = upstream["paths"]["/session/{sessionID}/message"]["post"]
-            props = v1["requestBody"]["content"]["application/json"]["schema"]["properties"]
+            props = v1["requestBody"]["content"]["application/json"]["schema"][
+                "properties"
+            ]
             has_structured = "format" in props
         except Exception:
             pass
-    print(f"\nStructured output (format field): {'PRESENT' if has_structured else 'MISSING'}")
+    print(
+        f"\nStructured output (format field): {'PRESENT' if has_structured else 'MISSING'}"
+    )
     if not has_structured:
         changes_needed.append(
             "'format' field in V1 prompt endpoint missing — structured output may have changed."
