@@ -19,7 +19,15 @@ mypy src/
 
 Ожидается: `ruff` — только N815 (camelCase поля из API, предустановленные), `mypy` — Success.
 
-## 3. Живой тест (с opencode в PATH)
+## 3. Демо
+
+```bash
+python demo.py
+```
+
+Должен пройти все 12 шагов без ошибок, завершиться "SDK is working correctly!".
+
+## 4. Живой тест
 
 ```bash
 python test_live.py
@@ -27,21 +35,13 @@ python test_live.py
 
 Запускает `opencode serve`, проходит 38 endpoint-чеков.
 
-## 4. Демо (один вопрос)
-
-```bash
-python demo.py
-```
-
-Должен ответить на "What is the capital of France?".
-
 ## 5. Интерактивный режим
 
 ```bash
 python live.py
 ```
 
-Проверить multi-turn (ctrl+C для выхода).
+Проверить multi-turn (Ctrl+C для выхода).
 
 ## 6. Streaming
 
@@ -73,7 +73,8 @@ python scripts/check-upstream.py
 
 ---
 
-После успешной проверки:
+После успешной проверки скажи — я подниму версию в `pyproject.toml`, сделаю тег `v0.3.0` и опубликую:
+
 ```bash
 git tag v0.3.0
 git push origin master --tags
