@@ -225,7 +225,7 @@ class OpencodeClient:
                     return [self._construct_type(inner, item) for item in inner_list]
             return cast(_T, data)
         if isinstance(data, dict):
-            return cast(_T, cast(Any, model_class).model_validate(data))
+            return cast(_T, cast(Any, model_class).model_construct(**data))
         if isinstance(data, list):
             return [self._construct_type(model_class, item) for item in data]
         if data is None:
