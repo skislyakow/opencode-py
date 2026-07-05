@@ -1,5 +1,13 @@
 # Changelog
 
+## v0.4.1 (2026-07-05)
+
+- perf(client): use `model_construct()` instead of `model_validate()` for faster deserialization
+- fix(demo): inline ternary to fix mypy assignment type error
+- test(client): add 16 `with_raw_response` unit tests (sync + async)
+- test(opencode): add 7 `ask_stream` unit tests
+- chore(pyproject): ignore E501 (line length) in test files
+
 ## v0.4.0 (2026-07-05)
 
 - feat(client): add `with_raw_response` context manager — returns `RawResponse[T]` with `.parsed`, `.status_code`, `.headers`, `.content` for every client method

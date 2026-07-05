@@ -48,6 +48,7 @@ git push
 
 | Version | Date | Highlights |
 |---------|------|------------|
+| 0.4.1   | 2026-07-05 | `model_construct()` speedup, mypy fix in demo, 23 new unit tests |
 | 0.4.0   | 2026-07-05 | `with_raw_response` pattern (RawResponse wrapper), streaming fix (no reasoning leakage, no echo, no duplicates) |
 | 0.3.0   | 2026-07-05 | Typed Pydantic models for all client methods (cast_to), 30+ new model classes, _construct_type handles list[X] generics and {"data": [...]} format |
 | 0.2.2   | 2026-07-04 | Comprehensive README documentation (EN/RU), Pydantic fixes in demo.py, mypy fixes |
