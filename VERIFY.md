@@ -17,7 +17,7 @@ ruff check src/ tests/
 mypy src/
 ```
 
-Ожидается: `ruff` — только N815 (camelCase поля из API, предустановленные), `mypy` — Success.
+Ожидается: `ruff` — All checks passed, `mypy` — Success.
 
 ## 3. Демо
 
