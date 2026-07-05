@@ -155,6 +155,9 @@ class AsyncSession:
             await self._client.v2_session_context(self.id, **kwargs),
         )
 
+    async def delete_message(self, message_id: str, **kwargs: Any) -> Any:
+        return await self._client.session_delete_message(self.id, message_id, **kwargs)
+
     async def compact(self) -> Any:
         return await self._client.v2_session_compact(self.id)
 

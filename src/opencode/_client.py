@@ -474,6 +474,9 @@ class OpencodeClient:
     def session_message(self, session_id: str, message_id: str) -> Any:
         return self._request("GET", f"/session/{session_id}/message/{message_id}")
 
+    def session_delete_message(self, session_id: str, message_id: str, **kwargs: Any) -> Any:
+        return self._request("DELETE", f"/session/{session_id}/message/{message_id}", params=kwargs)
+
     def session_fork(self, session_id: str, **kwargs: Any) -> Any:
         return self._request(
             "POST", f"/session/{session_id}/fork", json_body=kwargs or None, cast_to=SessionResponse

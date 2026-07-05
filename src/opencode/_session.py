@@ -151,6 +151,9 @@ class Session:
     def context(self, **kwargs: Any) -> list[SessionMessage]:
         return cast("list[SessionMessage]", self._client.v2_session_context(self.id, **kwargs))
 
+    def delete_message(self, message_id: str, **kwargs: Any) -> Any:
+        return self._client.session_delete_message(self.id, message_id, **kwargs)
+
     def compact(self) -> Any:
         return self._client.v2_session_compact(self.id)
 
