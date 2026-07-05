@@ -17,7 +17,8 @@ UPSTREAM_URL = "https://raw.githubusercontent.com/anomalyco/opencode/dev/package
 
 def fetch_json(url: str) -> dict[str, Any]:
     with urllib.request.urlopen(url, timeout=15) as resp:
-        return cast(dict[str, Any], json.loads(resp.read().decode()))
+        data: dict[str, Any] = json.loads(resp.read().decode())
+        return data
 
 
 def get_inline_delivery_enum(spec: dict[str, Any]) -> list[str] | None:
