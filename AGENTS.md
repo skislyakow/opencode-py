@@ -4,7 +4,7 @@
 
 Python SDK for [Opencode](https://opencode.ai) — a PyPI package (`opencode-py`) that launches an `opencode serve` subprocess and provides both high-level and low-level APIs.
 
-**Current version**: 0.2.0-dev
+**Current version**: 0.5.1
 **Python**: >=3.10
 **Dependencies**: `httpx>=0.27.0`, `pydantic>=2.0.0`, `typing-extensions>=4.6.0`
 **Build**: hatchling
@@ -38,6 +38,7 @@ opencode-py/
 │   ├── _response_models.py    # Pydantic BaseModel response types (all endpoints)
 │   ├── _types.py              # NotGiven sentinel
 │   ├── _logs.py               # Logging via OPENCODE_LOG env var
+│   ├── _stream_events.py       # Typed Pydantic models for all SSE events (~75 types)
 │   ├── _tools.py              # ToolExecutor — run tools locally with permissions
 │   ├── _errors.py             # Typed exception hierarchy (10+ classes)
 │   └── py.typed               # PEP 561 marker for type checkers
@@ -67,13 +68,10 @@ opencode-py/
 ## Current State (commit history)
 
 ```
-ad54a39 feat(web): add zero-dependency web UI with proxy server
-b8d205f feat(sdk): add auto_tools mode with ToolExecutor and permissions
-2fd170c docs: update AGENTS.md with keep mode and live.py
-67ae119 feat(sdk): add keep parameter for multi-turn conversations
-514b0a2 fix(session): use V1 sync prompt with model support instead of V2
-4323247 fix: resolve npm .cmd wrappers to real .exe binary on Windows
-fb4b884 feat: initial Python SDK for Opencode
+014fe7f feat(server): ephemeral port selection — auto-pick free port when port=None
+685a77c chore(release): bump to v0.5.1
+56d3522 feat(client): add session_delete_message endpoint
+20ca9a7 fix(client): replace type: ignore with cast for RawResponse return
 ```
 
 ### What works
@@ -88,12 +86,14 @@ fb4b884 feat: initial Python SDK for Opencode
 - `async_opencode(prompt, keep=True)` — async version of `opencode()`
 - Structured output — `format={"type": "json_schema", "schema": {...}}` on `ask()` / `prompt()` / `opencode()`
 - Async full support — `AsyncOpendcode`, `AsyncOpendcodeClient`, `AsyncSession`
-- Streaming — `ask_stream()` (sync + async) via `/event` SSE, works with `big-pickle` (non-streaming model) and streaming models
+- Streaming — `ask_stream()` (sync + async) via `/event` SSE, typed event models (`_stream_events.py` ~75 types)
+- Ephemeral port — auto-picks free port when `port=None` (default)
+- `session_delete_message()` — `DELETE /session/{sessionID}/message/{messageID}` with `Session.delete_message()` convenience method
 - `scripts/check-upstream.py` — fetches upstream openapi.json, flags needed changes
 - 38/38 live endpoints tested against opencode v1.17.13
-- 31/31 unit tests passing (sync + async)
+- 52/52 unit tests passing (sync + async)
 - Python 3.10 compatibility (`NotRequired` via `typing_extensions`)
-- `live.py` (sync), `live_async.py`, `live_streaming.py` — interactive dialog scripts with `atexit` cleanup
+- `live.py`, `live_async.py`, `live_streaming.py`, `live_raw.py`, `live_stream_events.py` — interactive dialog scripts with `atexit` cleanup
 - **Pydantic response models** — `HealthResponse`, `SessionResponse`, `FileContentResponse`, `ProviderResponse`, `V1SessionResponse` and more
 - **Retry logic** — exponential backoff with jitter, retries on 408/409/429/5xx and timeouts
 - **Typed error hierarchy** — `APIStatusError` → `BadRequestError`, `RateLimitError`, `InternalServerError`, etc.
@@ -247,60 +247,6 @@ python live_streaming.py
 python web/server.py
 ```
 
-## Next Steps (priority order)
-
-### Step B: Test `ask()` with free model (Big Pickle) ✅ DONE
-1. Figure out correct config for free model usage
-   - Check `/api/provider` on running server for "big-pickle" or free providers
-   - Check if Big Pickle works without any API key/config
-2. Test `Session.prompt()` with delivery="queue" + `v2_session_wait()`
-3. Test `Opencode().ask()` end-to-end
-4. Fix any response parsing issues
-5. Add `keep=True` for multi-turn conversations in `opencode()` convenience function
-   - Module-level `_opencode_state` for server/session reuse
-   - `atexit` cleanup in `live.py`
-   - 6 unit tests for `keep` / `_resolve_model`
-
-### Step C: Publish v0.1.0 to PyPI
-1. ~~Create `scripts/check-upstream.py` — fetches openapi.json, diffs with local~~ ✅ DONE
-2. ~~Create GitHub Actions CI (tests on push)~~ ✅ DONE
-3. Publish to TestPyPI first, then PyPI
-   - `pip install build twine`
-   - `python -m build`
-   - `twine upload --repository testpypi dist/*` (check first)
-   - `twine upload dist/*`
-   - Or: push tag `v0.1.0` → GitHub Actions publishes via Trusted Publishing
-
-### Step D: Async support ✅ DONE
-1. `AsyncOpendcodeClient` using `httpx.AsyncClient` ✅
-2. `AsyncSession` with `async prompt()` ✅
-3. `AsyncOpendcode` with `async def ask()` ✅
-4. `async_opencode()` convenience function ✅
-5. 11 unit tests for async client ✅
-
-### Step E: Streaming improvements
-1. Better SSE parsing in `ask_stream()`
-2. Handle `message.part.delta` and `message.updated` events
-
-### Step F: Structured output ✅ DONE
-1. `format` parameter on `prompt()` / `ask()` / `opencode()` / `async_opencode()` ✅
-2. `_extract_text()` handles `structured` field ✅
-3. 3 unit tests ✅
-
-### Step G: Upstream monitoring ✅ DONE
-1. `scripts/check-upstream.py` checks delivery enum + structured output ✅
-
-## Next Steps
-
-### Step H: Complete typed model coverage
-1. Add `cast_to` to remaining client methods (vcs, config, project, etc.)
-2. Add `with_raw_response` pattern for raw HTTP access
-3. Consider `model_construct()` for faster deserialization (skip validation)
-
-### Step I: Release v0.2.0
-1. Bump version in `pyproject.toml` to `0.2.0`
-2. Publish to PyPI via Trusted Publishing
-
 ## Release Process
 
 Run `python scripts/check-release.py` to check if a new PyPI release is needed.
@@ -354,6 +300,29 @@ fix(binary): resolve npm .cmd wrappers to real .exe on Windows
 refactor(client): extract error handling to _handle()
 ```
 
+## Borrow from opencode-runtime — plan
+
+### Task 1: Ephemeral port selection ✅
+- [x] `port=None` → auto-pick free port via `socket.bind(("", 0))`
+- [x] Explicit port still works (backward compat)
+- [x] README updated
+
+### Task 2: Response dataclass with raw events
+- [ ] Add `OpencodeResponse` dataclass: `text: str`, `events: list[Any]`
+- [ ] Modify `ask_stream()` to optionally collect all raw events
+- [ ] Add `collect=True/False` param
+- [ ] `Session.prompt()` can optionally return `OpencodeResponse` instead of bare string
+- [ ] Tests for event collection
+
+### Task 3: V2 session prompt via SSE (replace V1 polling)
+- [ ] Audit `/global/event` SSE endpoint reliability in current opencode server
+- [ ] If reliable: rework `Session.prompt()` to use `POST /session/{id}/prompt` + `/event` subscription
+- [ ] Keep V1 as fallback
+- [ ] Benchmark: polling vs SSE latency difference
+
+### Not planned
+- Multi-tenant pool, HOME isolation, registry, materials CLI fleet management — overkill for single-user SDK
+
 ## Quick Reference for New Agent
 
 ```
@@ -374,7 +343,7 @@ python demo.py
 # Try a simple interactive test
 python -c "
 from opencode import OpencodeClient, create_opencode_server
-s = create_opencode_server(port=4097)
+s = create_opencode_server()  # auto-port
 c = OpencodeClient(base_url=s.url)
 print('Health:', c.health())
 c.close()
