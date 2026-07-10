@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import os
 import re
+import socket
 import subprocess
 import time
 from typing import Any
@@ -30,15 +31,22 @@ class OpencodeServer:
         return self._proc.poll() is None
 
 
+def _find_free_port(hostname: str) -> int:
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+        s.bind((hostname, 0))
+        return int(s.getsockname()[1])
+
+
 def create_opencode_server(
     *,
     hostname: str = "127.0.0.1",
-    port: int = 4096,
+    port: int | None = None,
     timeout: float = 30.0,
     config: dict[str, Any] | None = None,
     opencode_binary: str | None = None,
 ) -> OpencodeServer:
     binary = opencode_binary or ensure_opencode()
+    port = port if port is not None else _find_free_port(hostname)
 
     args = [binary, "serve", f"--hostname={hostname}", f"--port={port}"]
     env = os.environ.copy()

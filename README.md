@@ -47,7 +47,7 @@ All CLI flags:
 | `--keep` / `-k` | Keep session alive between calls |
 | `--auto-tools` | Enable agentic tool execution |
 | `--directory` / `-d` | Working directory |
-| `--port` / `-p` | Server port (default: 4096) |
+| `--port` / `-p` | Server port (default: auto — first free port) |
 
 You can also use `python -m opencode`:
 
@@ -454,7 +454,7 @@ All parameters for `Opendcode()` / `AsyncOpendcode()`:
 |-----------|---------|-------------|
 | `model` | `None` | Model name, e.g. `"opencode/big-pickle"` or `"provider/model"` |
 | `hostname` | `"127.0.0.1"` | Bind address for the server |
-| `port` | `4096` | Port for the server |
+| `port` | `None` (auto) | Port for the server; `None` picks first free port |
 | `directory` | `None` | Working directory passed to all API calls |
 | `workspace` | `None` | Workspace directory for the session |
 | `server_timeout` | `30.0` | Seconds to wait for server startup |

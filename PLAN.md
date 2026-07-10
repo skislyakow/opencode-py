@@ -2,13 +2,13 @@
 
 ## Tasks
 
-### Task 1: Ephemeral port selection
-- [ ] In `OpendcodeServer.__init__()`, change `port` default from `4096` to `None`
-- [ ] In `start()`, if `port is None`: `socket.bind(("", 0))` → extract port → close socket → pass to subprocess
-- [ ] If port is explicitly given, use it as-is (backward compat)
-- [ ] Store chosen port in `self.port`
-- [ ] Update `OpendcodeServer` tests to verify auto-port works
-- [ ] Update README if needed
+### Task 1: Ephemeral port selection ✅
+- [x] In `OpendcodeServer.__init__()`, change `port` default from `4096` to `None`
+- [x] In `start()`, if `port is None`: `socket.bind(("", 0))` → extract port → close socket → pass to subprocess
+- [x] If port is explicitly given, use it as-is (backward compat)
+- [x] Store chosen port in `self.port`
+- [x] Update `OpendcodeServer` tests to verify auto-port works
+- [x] Update README
 
 ### Task 2: Response dataclass with raw events
 - [ ] Add `OpencodeResponse` dataclass (or NamedTuple): `text: str`, `events: list[Any]`

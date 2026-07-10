@@ -34,7 +34,7 @@ class Opencode:
         *,
         model: str | None = None,
         hostname: str = "127.0.0.1",
-        port: int = 4096,
+        port: int | None = None,
         directory: str | None = None,
         workspace: str | None = None,
         server_timeout: float = 30.0,
@@ -265,7 +265,7 @@ def opencode(
     agent: str | None = None,
     model: str | None = None,
     format: dict[str, Any] | None = None,
-    port: int = 4096,
+    port: int | None = None,
     directory: str | None = None,
     config: dict[str, Any] | None = None,
 ) -> str:
