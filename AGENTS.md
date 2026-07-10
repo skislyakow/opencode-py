@@ -350,3 +350,16 @@ c.close()
 s.close()
 "
 ```
+
+## Future ideas
+
+### TUI application (opencode-py[tui])
+
+A full-featured TUI chat client using [Textual](https://textual.textualize.io/), powered entirely by `opencode-py` as backend — no Node.js required:
+
+- Chat input/output, SSE streaming, tool execution, file changes view
+- Modal permission dialogs instead of console prompts
+- Optional dependency: `pip install opencode-py[tui]`
+- Separate project that consumes `opencode-py` as a library
+
+Prerequisites: Task 2 (response dataclass) + Task 3 (V2 SSE prompt).
