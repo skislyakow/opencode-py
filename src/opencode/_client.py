@@ -560,7 +560,7 @@ class OpencodeClient:
             **kwargs,
         }
         return self._request(
-            "POST", f"/api/session/{session_id}/prompt", json_body=body, cast_to=V1SessionResponse
+            "POST", f"/api/session/{session_id}/prompt", json_body=body, cast_to=None
         )
 
     def v2_session_wait(self, session_id: str) -> Any:

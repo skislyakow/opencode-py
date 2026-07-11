@@ -640,7 +640,7 @@ class AsyncOpendcodeClient:
             "POST",
             f"/api/session/{session_id}/prompt",
             json_body=body,
-            cast_to=V1SessionResponse,
+            cast_to=None,
         )
 
     async def v2_session_wait(self, session_id: str) -> Any:

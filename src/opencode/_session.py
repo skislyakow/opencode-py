@@ -14,6 +14,90 @@ class Session:
         self.id = session_id
         self._auto_confirmed: bool = False
 
+    def _prompt_v2(
+        self,
+        text: str,
+        *,
+        files: list[dict[str, Any]] | None = None,
+        agents: list[dict[str, Any]] | None = None,
+        references: list[dict[str, Any]] | None = None,
+        timeout: float = 600.0,
+    ) -> SessionMessage | None:
+        """V2 prompt via SSE subscription. Returns None on failure (falls back to V1)."""
+        import time as _time
+
+        import httpx
+
+        from opencode._stream_events import parse_stream_event
+
+        try:
+            response = self._client.event_subscribe()
+            assert isinstance(response, httpx.Response)
+
+            prompt_body: dict[str, Any] = {"text": text}
+            if files:
+                prompt_body["files"] = files
+            if agents:
+                prompt_body["agents"] = agents
+            if references:
+                prompt_body["references"] = references
+
+            # Send V2 prompt (non-blocking)
+            self._client.v2_session_prompt(self.id, prompt_body, delivery="queue")
+
+            # Wait for step.ended for our session
+            start = _time.time()
+            our_prompt_seen = False
+
+            for line in response.iter_lines():
+                if _time.time() - start > timeout:
+                    break
+
+                if not line.startswith("data: "):
+                    continue
+
+                event = parse_stream_event(line[6:])
+                props = event.properties
+
+                sid = props.get("sessionID")
+                if sid is not None and sid != self.id:
+                    continue
+
+                if event.type == "session.next.prompted":
+                    our_prompt_seen = True
+
+                if event.type == "session.next.step.ended" and our_prompt_seen:
+                    _time.sleep(0.2)
+                    break
+
+            if not our_prompt_seen:
+                return None
+
+            # Read context to get the assistant message
+            ctx = self._client.v2_session_context(self.id)
+            messages: list[Any] = ctx.get("data", []) if isinstance(ctx, dict) else ctx
+
+            for msg in reversed(messages):
+                if isinstance(msg, dict) and msg.get("type") == "assistant":
+                    parts_list: list[dict[str, Any]] = []
+                    for p in msg.get("content", []):
+                        ptype = p.get("type", "")
+                        if ptype in ("text", "reasoning", "tool"):
+                            parts_list.append({"type": ptype, "text": p.get("text", "")})
+
+                    return cast(SessionMessage, {
+                        "id": msg.get("id", ""),
+                        "type": "assistant",
+                        "content": parts_list,
+                        "model": msg.get("model"),
+                        "time": msg.get("time", {}),
+                    })
+
+            return None
+
+        except Exception:
+            return None
+
     def prompt(
         self,
         text: str,
@@ -28,6 +112,18 @@ class Session:
         poll_timeout: float = 600.0,
         collect: bool = False,
     ) -> OpencodeResponse | SessionMessage:
+        # Try V2 + SSE first (unless model/format specified — not supported by V2)
+        if wait and model is None and format is None:
+            v2_result = self._prompt_v2(
+                text, files=files, agents=agents, references=references, timeout=poll_timeout,
+            )
+            if v2_result is not None:
+                if collect:
+                    from opencode._opencode import _extract_text
+                    return OpencodeResponse(text=_extract_text(v2_result))
+                return v2_result
+
+        # Fall back to V1
         parts: list[dict[str, Any]] = [{"type": "text", "text": text}]
         body: dict[str, Any] = {"parts": parts}
         if model:
@@ -35,7 +131,6 @@ class Session:
         if format:
             body["format"] = format
 
-        # Use V1 sync prompt (POST /session/:id/message)
         result = self._client.session_send(self.id, body)
 
         parts_list = (
@@ -164,7 +259,9 @@ class Session:
         return self._client.v2_session_messages(self.id, **kwargs)
 
     def context(self, **kwargs: Any) -> list[SessionMessage]:
-        return cast("list[SessionMessage]", self._client.v2_session_context(self.id, **kwargs))
+        ctx = self._client.v2_session_context(self.id, **kwargs)
+        messages = ctx.get("data", []) if isinstance(ctx, dict) else ctx
+        return cast("list[SessionMessage]", messages)
 
     def delete_message(self, message_id: str, **kwargs: Any) -> Any:
         return self._client.session_delete_message(self.id, message_id, **kwargs)

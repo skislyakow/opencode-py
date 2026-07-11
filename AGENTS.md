@@ -69,6 +69,7 @@ opencode-py/
 
 ```
 491c3d4 feat(opencode): add OpencodeResponse dataclass with collect param
+e14ea7b docs: update AGENTS.md for v0.6.0 and Task 2 completion
 014fe7f feat(server): ephemeral port selection — auto-pick free port when port=None
 685a77c chore(release): bump to v0.5.1
 56d3522 feat(client): add session_delete_message endpoint
@@ -88,6 +89,7 @@ opencode-py/
 - Structured output — `format={"type": "json_schema", "schema": {...}}` on `ask()` / `prompt()` / `opencode()`
 - Async full support — `AsyncOpendcode`, `AsyncOpendcodeClient`, `AsyncSession`
 - Streaming — `ask_stream()` (sync + async) via `/event` SSE, typed event models (`_stream_events.py` ~75 types)
+- V2 session prompt via SSE — `Session.prompt()` uses `POST /api/session/{id}/prompt` + `/event` SSE subscription with V1 fallback
 - Ephemeral port — auto-picks free port when `port=None` (default)
 - `session_delete_message()` — `DELETE /session/{sessionID}/message/{messageID}` with `Session.delete_message()` convenience method
 - `scripts/check-upstream.py` — fetches upstream openapi.json, flags needed changes
@@ -317,11 +319,11 @@ refactor(client): extract error handling to _handle()
 - [x] `Session.prompt()` can optionally return `OpencodeResponse` instead of bare string
 - [ ] Tests for event collection (pending)
 
-### Task 3: V2 session prompt via SSE (replace V1 polling)
-- [ ] Audit `/global/event` SSE endpoint reliability in current opencode server
-- [ ] If reliable: rework `Session.prompt()` to use `POST /session/{id}/prompt` + `/event` subscription
-- [ ] Keep V1 as fallback
-- [ ] Benchmark: polling vs SSE latency difference
+### Task 3: V2 session prompt via SSE (replace V1 polling) ✅
+- [x] Audit `/global/event` SSE endpoint reliability in current opencode server
+- [x] If reliable: rework `Session.prompt()` to use `POST /api/session/{id}/prompt` + `/event` subscription
+- [x] Keep V1 as fallback (when model/format specified or SSE fails)
+- [ ] Benchmark: polling vs SSE latency difference (pending)
 
 ### Not planned
 - Multi-tenant pool, HOME isolation, registry, materials CLI fleet management — overkill for single-user SDK

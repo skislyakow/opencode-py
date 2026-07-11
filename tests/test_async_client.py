@@ -9,7 +9,6 @@ from opencode._response_models import (
     HealthResponse,
     RawResponse,
     SessionResponse,
-    V1SessionResponse,
 )
 
 
@@ -98,9 +97,9 @@ async def test_v2_session_prompt() -> None:
         ),
     )
     result = await client.v2_session_prompt("ses_1", {"text": "hello"})
-    assert isinstance(result, V1SessionResponse)
-    assert result.id == "msg_1"
-    assert result.type == "assistant"
+    assert isinstance(result, dict)
+    assert result["id"] == "msg_1"
+    assert result["type"] == "assistant"
 
 
 @pytest.mark.asyncio
