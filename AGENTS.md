@@ -68,6 +68,7 @@ opencode-py/
 ## Current State (commit history)
 
 ```
+44d23f0 feat(session): V2 session prompt via SSE subscription
 491c3d4 feat(opencode): add OpencodeResponse dataclass with collect param
 e14ea7b docs: update AGENTS.md for v0.6.0 and Task 2 completion
 014fe7f feat(server): ephemeral port selection — auto-pick free port when port=None
