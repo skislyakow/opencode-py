@@ -1,3 +1,4 @@
+from dataclasses import dataclass, field
 from typing import Any, Generic, TypeVar
 
 import httpx
@@ -37,6 +38,17 @@ class RawResponse(Generic[_T]):
     @property
     def response(self) -> httpx.Response:
         return self._response
+
+
+@dataclass
+class OpencodeResponse:
+    """Dataclass wrapping the assistant's text response and all raw SSE events.
+
+    Returned by ``Session.prompt(collect=True)`` or ``Session.ask(collect=True)``.
+    """
+
+    text: str = ""
+    events: list[Any] = field(default_factory=list)
 
 
 class OpencodeBaseModel(BaseModel):

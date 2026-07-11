@@ -7,6 +7,7 @@ from typing import Any, cast
 
 from opencode._client import OpencodeClient
 from opencode._models import SessionMessage
+from opencode._response_models import OpencodeResponse
 from opencode._server import OpencodeServer, create_opencode_server
 from opencode._session import Session
 
@@ -134,7 +135,8 @@ class Opencode:
         wait: bool = True,
         poll_interval: float = 0.5,
         poll_timeout: float = 600.0,
-    ) -> str:
+        collect: bool = False,
+    ) -> str | OpencodeResponse:
         session = self.create_session(agent=agent)
         if auto_tools:
             from opencode._tools import ToolExecutor
@@ -145,6 +147,7 @@ class Opencode:
                 model=self._resolve_model(),
                 format=format,
                 tool_executor=ToolExecutor(),
+                collect=collect,
             )
         else:
             msg = session.prompt(
@@ -155,8 +158,12 @@ class Opencode:
                 format=format,
                 poll_interval=poll_interval,
                 poll_timeout=poll_timeout,
+                collect=collect,
             )
-        return _extract_text(msg)
+        if collect:
+            assert isinstance(msg, OpencodeResponse)
+            return msg
+        return _extract_text(cast("SessionMessage", msg))
 
     def ask_stream(
         self,
@@ -268,7 +275,8 @@ def opencode(
     port: int | None = None,
     directory: str | None = None,
     config: dict[str, Any] | None = None,
-) -> str:
+    collect: bool = False,
+) -> str | OpencodeResponse:
     global _opencode_state
     state = _opencode_state
 
@@ -296,13 +304,19 @@ def opencode(
     if auto_tools:
         from opencode._tools import ToolExecutor
 
-        msg = session.ask(prompt, model=resolved, format=format, tool_executor=ToolExecutor())
+        msg = session.ask(
+                prompt, model=resolved, format=format, tool_executor=ToolExecutor(), collect=collect
+            )
     else:
-        msg = session.prompt(prompt, model=resolved, format=format)
-    result = _extract_text(msg)
+        msg = session.prompt(prompt, model=resolved, format=format, collect=collect)
+    if collect:
+        assert isinstance(msg, OpencodeResponse)
+        if not keep:
+            ai.close()
+            state.clear()
+        return msg
 
     if not keep:
         ai.close()
         state.clear()
-
-    return result
+    return _extract_text(cast("SessionMessage", msg))

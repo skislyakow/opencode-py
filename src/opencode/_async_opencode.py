@@ -2,11 +2,13 @@ from __future__ import annotations
 
 import warnings
 from collections.abc import AsyncIterator
-from typing import Any
+from typing import Any, cast
 
 from opencode._async_client import AsyncOpendcodeClient
 from opencode._async_session import AsyncSession
+from opencode._models import SessionMessage
 from opencode._opencode import _extract_text, _resolve_model
+from opencode._response_models import OpencodeResponse
 from opencode._server import OpencodeServer, create_opencode_server
 
 _async_opencode_state: dict[str, Any] = {}
@@ -113,7 +115,8 @@ class AsyncOpendcode:
         wait: bool = True,
         poll_interval: float = 0.5,
         poll_timeout: float = 600.0,
-    ) -> str:
+        collect: bool = False,
+    ) -> str | OpencodeResponse:
         session = await self.create_session(agent=agent)
         model = _resolve_model(model=self._model, config=self._config)
         if auto_tools:
@@ -125,6 +128,7 @@ class AsyncOpendcode:
                 model=model,
                 format=format,
                 tool_executor=ToolExecutor(),
+                collect=collect,
             )
         else:
             msg = await session.prompt(
@@ -135,8 +139,12 @@ class AsyncOpendcode:
                 format=format,
                 poll_interval=poll_interval,
                 poll_timeout=poll_timeout,
+                collect=collect,
             )
-        return _extract_text(msg)
+        if collect:
+            assert isinstance(msg, OpencodeResponse)
+            return msg
+        return _extract_text(cast("SessionMessage", msg))
 
     async def ask_stream(
         self,
@@ -232,7 +240,8 @@ async def async_opencode(
     port: int | None = None,
     directory: str | None = None,
     config: dict[str, Any] | None = None,
-) -> str:
+    collect: bool = False,
+) -> str | OpencodeResponse:
     global _async_opencode_state
     state = _async_opencode_state
 
@@ -260,13 +269,19 @@ async def async_opencode(
     if auto_tools:
         from opencode._tools import ToolExecutor
 
-        msg = await session.ask(prompt, model=resolved, format=format, tool_executor=ToolExecutor())
+        msg = await session.ask(
+                prompt, model=resolved, format=format, tool_executor=ToolExecutor(), collect=collect
+            )
     else:
-        msg = await session.prompt(prompt, model=resolved, format=format)
-    result = _extract_text(msg)
+        msg = await session.prompt(prompt, model=resolved, format=format, collect=collect)
+    if collect:
+        assert isinstance(msg, OpencodeResponse)
+        if not keep:
+            await ai.close()
+            state.clear()
+        return msg
 
     if not keep:
         await ai.close()
         state.clear()
-
-    return result
+    return _extract_text(cast("SessionMessage", msg))

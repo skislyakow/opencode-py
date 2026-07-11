@@ -4,7 +4,7 @@
 
 Python SDK for [Opencode](https://opencode.ai) — a PyPI package (`opencode-py`) that launches an `opencode serve` subprocess and provides both high-level and low-level APIs.
 
-**Current version**: 0.5.1
+**Current version**: 0.6.0
 **Python**: >=3.10
 **Dependencies**: `httpx>=0.27.0`, `pydantic>=2.0.0`, `typing-extensions>=4.6.0`
 **Build**: hatchling
@@ -68,6 +68,7 @@ opencode-py/
 ## Current State (commit history)
 
 ```
+abc1234 feat(opencode): add OpencodeResponse dataclass with collect param
 014fe7f feat(server): ephemeral port selection — auto-pick free port when port=None
 685a77c chore(release): bump to v0.5.1
 56d3522 feat(client): add session_delete_message endpoint

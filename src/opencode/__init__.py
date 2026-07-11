@@ -31,7 +31,7 @@ from opencode._models import (
     UserMessage,
 )
 from opencode._opencode import Opencode, opencode
-from opencode._response_models import RawResponse
+from opencode._response_models import OpencodeResponse, RawResponse
 from opencode._server import OpencodeServer, create_opencode_server
 from opencode._session import Session
 from opencode._stream_events import (
@@ -76,6 +76,7 @@ __all__ = [
     "Opencode",
     "OpencodeClient",
     "OpencodeError",
+    "OpencodeResponse",
     "OpencodeServer",
     "PermissionDeniedError",
     "RawResponse",

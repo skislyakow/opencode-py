@@ -4,7 +4,7 @@ from typing import Any, cast
 
 from opencode._client import OpencodeClient
 from opencode._models import SessionMessage
-from opencode._response_models import V1SessionResponse
+from opencode._response_models import OpencodeResponse, V1SessionResponse
 from opencode._tools import ToolExecutor
 
 
@@ -26,7 +26,8 @@ class Session:
         wait: bool = True,
         poll_interval: float = 0.5,
         poll_timeout: float = 600.0,
-    ) -> SessionMessage:
+        collect: bool = False,
+    ) -> OpencodeResponse | SessionMessage:
         parts: list[dict[str, Any]] = [{"type": "text", "text": text}]
         body: dict[str, Any] = {"parts": parts}
         if model:
@@ -56,7 +57,12 @@ class Session:
         }
         if structured is not None:
             msg["structured"] = structured
-        return cast(SessionMessage, msg)
+        result_msg = cast(SessionMessage, msg)
+        if collect:
+            from opencode._opencode import _extract_text
+
+            return OpencodeResponse(text=_extract_text(result_msg))
+        return result_msg
 
     def ask(
         self,
@@ -68,7 +74,8 @@ class Session:
         max_tool_rounds: int = 25,
         tool_executor: ToolExecutor | None = None,
         quiet: bool = False,
-    ) -> SessionMessage:
+        collect: bool = False,
+    ) -> OpencodeResponse | SessionMessage:
         if tool_executor is None:
             tool_executor = ToolExecutor()
         parts: list[dict[str, Any]] = [{"type": "text", "text": text}]
@@ -84,7 +91,11 @@ class Session:
 
             result = self._client.session_send(self.id, body)
             if not isinstance(result, V1SessionResponse) and not isinstance(result, dict):
-                return cast(SessionMessage, result)
+                early_msg = cast(SessionMessage, result)
+                if collect:
+                    from opencode._opencode import _extract_text
+                    return OpencodeResponse(text=_extract_text(early_msg))
+                return early_msg
 
             parts_list = (
                 result.parts if isinstance(result, V1SessionResponse) else result.get("parts", [])
@@ -141,7 +152,11 @@ class Session:
             structured = getattr(result, "structured", None) or info.get("structured")
             if structured is not None:
                 msg["structured"] = structured
-            return cast(SessionMessage, msg)
+            result_msg = cast(SessionMessage, msg)
+            if collect:
+                from opencode._opencode import _extract_text
+                return OpencodeResponse(text=_extract_text(result_msg))
+            return result_msg
 
         raise RuntimeError(f"Tool loop exceeded {max_tool_rounds} rounds")
 
