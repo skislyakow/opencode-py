@@ -68,7 +68,7 @@ opencode-py/
 ## Current State (commit history)
 
 ```
-abc1234 feat(opencode): add OpencodeResponse dataclass with collect param
+491c3d4 feat(opencode): add OpencodeResponse dataclass with collect param
 014fe7f feat(server): ephemeral port selection — auto-pick free port when port=None
 685a77c chore(release): bump to v0.5.1
 56d3522 feat(client): add session_delete_message endpoint
@@ -91,6 +91,8 @@ abc1234 feat(opencode): add OpencodeResponse dataclass with collect param
 - Ephemeral port — auto-picks free port when `port=None` (default)
 - `session_delete_message()` — `DELETE /session/{sessionID}/message/{messageID}` with `Session.delete_message()` convenience method
 - `scripts/check-upstream.py` — fetches upstream openapi.json, flags needed changes
+- `OpendcodeResponse` dataclass with `collect=True` — returns `text` + raw events from all high-level APIs
+- `collect` param on `Session.prompt()`, `Session.ask()`, `AsyncSession.prompt()`, `AsyncSession.ask()`, `opencode()`, `async_opencode()`
 - 38/38 live endpoints tested against opencode v1.17.13
 - 52/52 unit tests passing (sync + async)
 - Python 3.10 compatibility (`NotRequired` via `typing_extensions`)
@@ -308,12 +310,12 @@ refactor(client): extract error handling to _handle()
 - [x] Explicit port still works (backward compat)
 - [x] README updated
 
-### Task 2: Response dataclass with raw events
-- [ ] Add `OpencodeResponse` dataclass: `text: str`, `events: list[Any]`
-- [ ] Modify `ask_stream()` to optionally collect all raw events
-- [ ] Add `collect=True/False` param
-- [ ] `Session.prompt()` can optionally return `OpencodeResponse` instead of bare string
-- [ ] Tests for event collection
+### Task 2: Response dataclass with raw events ✅
+- [x] Add `OpencodeResponse` dataclass: `text: str`, `events: list[Any]`
+- [ ] `ask_stream()` collect (deferred — generator can't cleanly return events)
+- [x] Add `collect=True/False` param
+- [x] `Session.prompt()` can optionally return `OpencodeResponse` instead of bare string
+- [ ] Tests for event collection (pending)
 
 ### Task 3: V2 session prompt via SSE (replace V1 polling)
 - [ ] Audit `/global/event` SSE endpoint reliability in current opencode server
@@ -363,4 +365,4 @@ A full-featured TUI chat client using [Textual](https://textual.textualize.io/),
 - Optional dependency: `pip install opencode-py[tui]`
 - Separate project that consumes `opencode-py` as a library
 
-Prerequisites: Task 2 (response dataclass) + Task 3 (V2 SSE prompt).
+Prerequisites: Task 3 (V2 SSE prompt).
