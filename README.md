@@ -89,6 +89,38 @@ with Opencode() as ai:
 prompt, and yields each text chunk as it arrives. Reasoning blocks, user echo,
 and duplicate text are automatically filtered out.
 
+V2 `Session.prompt()` also uses the `/event` SSE endpoint internally —
+it sends a non-blocking V2 prompt, subscribes to events, and waits for
+`session.next.step.ended` before assembling the response. V1 blocking prompt
+is used as a fallback when `model` or `format` is specified.
+
+#### Response with raw events (`collect`)
+
+All high-level methods accept `collect=True` to return an `OpendcodeResponse`
+dataclass containing both the response text and all raw SSE events:
+
+```python
+from opencode import opencode
+
+# Get text + raw events
+response = opencode("Hello", collect=True)
+print(response.text)       # "Hello! How can I help you?"
+print(response.events)     # all SSE events received during the prompt
+```
+
+```python
+from opencode import Opencode
+
+with Opencode() as ai:
+    session = ai.create_session()
+    result = session.prompt("Say hi", collect=True)
+    print(result.text)      # "Hi!"
+    print(result.events)    # [StreamEvent, ...] — full event log
+```
+
+Works with: `Session.prompt()`, `Session.ask()`, `Opencode.ask()`,
+`opencode()`, `async_opencode()`, and their async counterparts.
+
 #### Typed stream events
 
 For advanced use, the SDK exposes the full SSE event stream as typed Pydantic
@@ -130,9 +162,15 @@ with Opencode() as ai:
 
 This works for all ~75 event types: `message.updated`, `session.status`,
 `session.next.text.delta`, `permission.asked`, `question.asked`, `file.edited`,
-and more. Use `parse_typed_event()` for automatic property validation.
+and more.
 
-See [`live_stream_events.py`](#interactive-dialog) for a complete demo.
+> **Note**: The example above shows V1 blocking prompt (`session_send`).
+> V2 `Session.prompt()` internally uses `session.next.*` events
+> (`session.next.prompted`, `session.next.step.ended`, etc.) delivered
+> through the same `/event` SSE endpoint.
+
+Use `parse_typed_event()` for automatic property validation. See
+[`live_stream_events.py`](#interactive-dialog) for a complete demo.
 
 ### Conversations
 
@@ -144,6 +182,10 @@ with Opencode() as ai:
     msg2 = session.prompt("Now write a tagline for it")
     print(f"AI: {msg2}")
 ```
+
+`Session.prompt()` uses V2 non-blocking prompt + SSE subscription for
+faster responses. Falls back to V1 blocking prompt when `model` or
+`format` is specified (e.g. structured output).
 
 ### Session methods
 
@@ -519,7 +561,21 @@ result3 = await async_opencode("Bye")
 # Also accepts: model, format, port, directory, config, agent, auto_tools
 ```
 
-## OpenAPI response models
+## Key types
+
+### OpencodeResponse
+
+```python
+from opencode import OpencodeResponse
+
+response = session.prompt("Hello", collect=True)
+# response.text    -> str              (extracted response text)
+# response.events  -> list[StreamEvent]  (raw SSE events)
+```
+
+Returned by all high-level APIs when `collect=True`.
+
+### Pydantic response models
 
 ```python
 from opencode._response_models import HealthResponse, SessionResponse, FileContentResponse

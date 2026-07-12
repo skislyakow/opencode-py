@@ -88,6 +88,38 @@ with Opencode() as ai:
 запрос и выдаёт каждый текстовый фрагмент по мере поступления. Reasoning-блоки,
 эхо пользователя и дублирующийся текст автоматически фильтруются.
 
+V2 `Session.prompt()` также использует `/event` SSE внутри — отправляет
+неблокирующий V2 запрос, подписывается на события и ждёт
+`session.next.step.ended` перед сборкой ответа. V1 блокирующий промпт
+используется как fallback, когда указаны `model` или `format`.
+
+#### Ответ с сырыми событиями (`collect`)
+
+Все высокоуровневые методы принимают `collect=True` и возвращают
+датакласс `OpendcodeResponse` с текстом ответа и сырыми SSE событиями:
+
+```python
+from opencode import opencode, OpencodeResponse
+
+response = opencode("Hello", collect=True)
+print(response.text)       # "Hello! How can I help you?"
+print(response.events)     # все SSE события из диалога
+# response имеет тип OpencodeResponse
+```
+
+```python
+from opencode import Opencode
+
+with Opencode() as ai:
+    session = ai.create_session()
+    result = session.prompt("Say hi", collect=True)
+    print(result.text)      # "Hi!"
+    print(result.events)    # [StreamEvent, ...] — полный лог событий
+```
+
+Работает с: `Session.prompt()`, `Session.ask()`, `Opencode.ask()`,
+`opencode()`, `async_opencode()`.
+
 #### Типизированные события стриминга
 
 Для продвинутого использования SDK предоставляет полный SSE-поток в виде
@@ -129,9 +161,15 @@ with Opencode() as ai:
 
 Работает для всех ~75 типов событий: `message.updated`, `session.status`,
 `session.next.text.delta`, `permission.asked`, `question.asked`, `file.edited`
-и других. Используйте `parse_typed_event()` для автоматической валидации.
+и других.
 
-Полный пример в [`live_stream_events.py`](#интерактивный-диалог).
+> **Примечание**: Пример выше использует V1 блокирующий промпт (`session_send`).
+> V2 `Session.prompt()` внутри использует события `session.next.*`
+> (`session.next.prompted`, `session.next.step.ended`, и т.д.) через
+> тот же `/event` SSE эндпоинт.
+
+Используйте `parse_typed_event()` для автоматической валидации. Полный пример
+в [`live_stream_events.py`](#интерактивный-диалог).
 
 ### Диалоги
 
@@ -143,6 +181,10 @@ with Opencode() as ai:
     msg2 = session.prompt("Now write a tagline for it")
     print(f"AI: {msg2}")
 ```
+
+`Session.prompt()` использует V2 неблокирующий промпт + SSE подписку для
+более быстрых ответов. Падает на V1 блокирующий промпт когда указаны
+`model` или `format` (например structured output).
 
 ### Методы Session
 
@@ -518,7 +560,21 @@ result3 = await async_opencode("Bye")
 # Также принимает: model, format, port, directory, config, agent, auto_tools
 ```
 
-## Pydantic response модели
+## Ключевые типы
+
+### OpencodeResponse
+
+```python
+from opencode import OpencodeResponse
+
+response = session.prompt("Hello", collect=True)
+# response.text    -> str                 (извлечённый текст ответа)
+# response.events  -> list[StreamEvent]   (сырые SSE события)
+```
+
+Возвращается всеми высокоуровневыми API при `collect=True`.
+
+### Pydantic response модели
 
 ```python
 from opencode._response_models import HealthResponse, SessionResponse, FileContentResponse

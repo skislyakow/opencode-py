@@ -82,7 +82,7 @@ e14ea7b docs: update AGENTS.md for v0.6.0 and Task 2 completion
 - Binary auto-detection: PATH -> `~/.opencode/bin/` -> GitHub download
 - Full REST API coverage (V1 + V2):
   - Global, config, sessions, files, VCS, find, MCP, auth, providers, models, LSP, formatter, tools, permissions, questions, PTY, worktree, workspace, sync, TUI
-- Session prompt via V1 sync API (V2 `v2_session_wait` is broken, replaced with V1 `POST /session/:id/message`)
+- Session prompt via V2 SSE subscription (`POST /api/session/{id}/prompt` + `/event`), falls back to V1 blocking prompt when model/format is specified
 - `Opencode(config={"model": "opencode/big-pickle"}).ask("...")` — works end-to-end with free model
 - `opencode(prompt, keep=True)` — multi-turn conversation in same session
 - `opencode(prompt, auto_tools=True)` — agentic tool execution (bash, write, edit, read, glob, grep) with permission system
@@ -113,7 +113,7 @@ e14ea7b docs: update AGENTS.md for v0.6.0 and Task 2 completion
 
 2. ~~**Config format** — `Opencode(config={"model": "anthropic/..."})` fails because config expects `provider.{id}.options.apiKey` format.~~ **FIXED**: `opencode(model=...)` no longer puts model in server config — passes it per-request.
 
-3. **`v2_session_wait` broken** — `POST /api/session/{sessionID}/wait` returns "Session wait is not available yet" in v1.17.13. **FIXED**: `Session.prompt()` now polls `v2_session_context()` until an assistant message appears.
+3. **`v2_session_wait` broken** — `POST /api/session/{sessionID}/wait` returns "Session wait is not available yet" in v1.17.13. **FIXED**: `Session.prompt()` now uses V2 prompt + `/event` SSE subscription, waits for `session.next.step.ended` event. Old fix (polling `v2_session_context()`) replaced.
 
 4. ~~**No async support** — `OpencodeClient` is sync-only.~~ **DONE**: Full async support.
 
