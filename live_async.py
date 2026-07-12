@@ -17,7 +17,9 @@ def _cleanup() -> None:
         print(f"\n[cleanup] killing PID {_pid}...", file=sys.stderr)
         import subprocess
 
-        subprocess.run(["taskkill", "/F", "/PID", str(_pid)], capture_output=True)
+        subprocess.run(
+            ["taskkill", "/F", "/PID", str(_pid)], capture_output=True
+        )
         _pid = None
 
 

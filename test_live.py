@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import Any, Callable
+
 from opencode import OpencodeClient, create_opencode_server
 
 server = create_opencode_server(port=4097)
@@ -12,7 +14,7 @@ client = OpencodeClient(base_url=server.url)
 results: list[str] = []
 
 
-def check(num: int, label: str, fn):
+def check(num: int, label: str, fn: Callable[[], Any]) -> None:
     try:
         result = fn()
         pretty = (
@@ -32,7 +34,7 @@ def check(num: int, label: str, fn):
 
 
 # 1-15: basic infrastructure
-check(1, "Health", lambda: client.health().get("version"))
+check(1, "Health", lambda: client.health().version)
 check(2, "Global config", lambda: client.global_config_get())
 check(3, "Config", lambda: client.config_get())
 
