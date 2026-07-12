@@ -1,9 +1,10 @@
 from __future__ import annotations
 
 from typing import cast
-from unittest.mock import MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import httpx
+import pytest
 
 from opencode import OpencodeClient
 from opencode._models import AssistantMessage, SessionMessage
@@ -554,3 +555,79 @@ def test_opencode_collect_false_default() -> None:
     mock_ai.close.assert_called_once()
     assert not _opencode_state
     _opencode_state.clear()
+
+
+# ---------------------------------------------------------------------------
+# ask_stream collect — async
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_ask_stream_async_collect_true() -> None:
+    """Async ask_stream(collect=True) returns AsyncStreamResult with events."""
+    from opencode import AsyncOpendcode
+    from opencode._response_models import AsyncStreamResult
+
+    session = MagicMock()
+    session.id = "ses_a1"
+
+    events = [
+        'data: {"type":"message.updated","properties":{"info":{"role":"user"}}}\n\n',
+        'data: {"type":"message.part.updated","properties":{"sessionID":"ses_a1","part":{"id":"p_u","type":"text","text":"hi"}}}\n\n',
+        'data: {"type":"message.updated","properties":{"info":{"role":"assistant"}}}\n\n',
+        'data: {"type":"message.part.updated","properties":{"sessionID":"ses_a1","part":{"id":"p_t","type":"text","text":""}}}\n\n',
+        'data: {"type":"message.part.delta","properties":{"sessionID":"ses_a1","partID":"p_t","delta":"Hello"}}\n\n',
+        'data: {"type":"message.part.delta","properties":{"sessionID":"ses_a1","partID":"p_t","delta":" async"}}\n\n',
+        'data: {"type":"session.status","properties":{"status":{"type":"idle"}}}\n\n',
+    ]
+    mock_client = MagicMock()
+    mock_client.event_subscribe = AsyncMock(return_value=_make_sse_response(events))
+    mock_client.session_send = AsyncMock()
+    mock_client.session_create = AsyncMock()
+
+    ai = AsyncOpendcode(model="opencode/big-pickle")
+    ai._client = mock_client
+    ai._server = MagicMock()
+
+    stream = ai.ask_stream("hello", session=session, collect=True)
+    assert isinstance(stream, AsyncStreamResult)
+
+    chunks: list[str] = []
+    async for chunk in stream:
+        chunks.append(chunk)
+    assert chunks == ["Hello", " async"]
+    assert stream.text == "Hello async"
+    assert len(stream.events) == 7
+
+
+@pytest.mark.asyncio
+async def test_ask_stream_async_collect_false() -> None:
+    """Async ask_stream(collect=False) is not AsyncStreamResult."""
+    from opencode import AsyncOpendcode
+    from opencode._response_models import AsyncStreamResult
+
+    session = MagicMock()
+    session.id = "ses_a2"
+
+    events = [
+        'data: {"type":"message.updated","properties":{"info":{"role":"user"}}}\n\n',
+        'data: {"type":"message.updated","properties":{"info":{"role":"assistant"}}}\n\n',
+        'data: {"type":"message.part.updated","properties":{"sessionID":"ses_a2","part":{"id":"p_t","type":"text","text":""}}}\n\n',
+        'data: {"type":"message.part.delta","properties":{"sessionID":"ses_a2","partID":"p_t","delta":"Hi"}}\n\n',
+        'data: {"type":"session.status","properties":{"status":{"type":"idle"}}}\n\n',
+    ]
+    mock_client = MagicMock()
+    mock_client.event_subscribe = AsyncMock(return_value=_make_sse_response(events))
+    mock_client.session_send = AsyncMock()
+    mock_client.session_create = AsyncMock()
+
+    ai = AsyncOpendcode(model="opencode/big-pickle")
+    ai._client = mock_client
+    ai._server = MagicMock()
+
+    result = ai.ask_stream("hello", session=session, collect=False)
+    assert not isinstance(result, AsyncStreamResult)
+    chunks: list[str] = []
+    async for chunk in result:
+        chunks.append(chunk)
+    assert chunks == ["Hi"]

@@ -146,7 +146,7 @@ class AsyncOpendcode:
             return msg
         return _extract_text(cast("SessionMessage", msg))
 
-    async def ask_stream(
+    def ask_stream(
         self,
         prompt: str,
         *,
@@ -154,8 +154,6 @@ class AsyncOpendcode:
         session: AsyncSession | None = None,
         collect: bool = False,
     ) -> AsyncIterator[str]:
-        import httpx
-
         from opencode._stream_events import (
             MessagePartDeltaProps,
             MessagePartUpdatedProps,
@@ -165,21 +163,23 @@ class AsyncOpendcode:
         )
 
         if session is None:
-            session = await self.create_session()
-        # Use V1 synchronous prompt — events arrive via /event
-        body: dict[str, Any] = {"parts": [{"type": "text", "text": prompt}]}
-        resolved = _resolve_model(model=self._model, config=self._config)
-        if resolved:
-            body["model"] = resolved
-
-        # Subscribe before sending to catch all events
-        response = await self.client.event_subscribe()
-        assert isinstance(response, httpx.Response)
-
-        # Send prompt (V1 sync)
-        await self.client.session_send(session.id, body)
+            # Caller must create session before passing it, or we use a workaround
+            raise TypeError("session is required for async ask_stream")
 
         async def gen() -> AsyncIterator[Any]:
+            import httpx
+
+            # Subscribe before sending to catch all events
+            response = await self.client.event_subscribe()
+            assert isinstance(response, httpx.Response)
+
+            # Send prompt (V1 sync)
+            body: dict[str, Any] = {"parts": [{"type": "text", "text": prompt}]}
+            resolved = _resolve_model(model=self._model, config=self._config)
+            if resolved:
+                body["model"] = resolved
+            await self.client.session_send(session.id, body)
+
             part_types: dict[str, str] = {}
             parts_with_deltas: set[str] = set()
             assistant_started = False

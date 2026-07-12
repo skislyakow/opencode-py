@@ -64,7 +64,7 @@ class AsyncStreamResult:
 
     Example::
 
-        stream = await ai.ask_stream("hello", collect=True)
+        stream = ai.ask_stream("hello", collect=True)
         async for chunk in stream:
             print(chunk, end="")
         # After consumption:
