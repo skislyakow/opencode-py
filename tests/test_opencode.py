@@ -5,13 +5,16 @@ from unittest.mock import MagicMock, patch
 
 import httpx
 
-from opencode._models import AssistantMessage
+from opencode import OpencodeClient
+from opencode._models import AssistantMessage, SessionMessage
 from opencode._opencode import (
     _extract_text,
     _opencode_state,
     _resolve_model,
     opencode,
 )
+from opencode._response_models import OpencodeResponse
+from opencode._session import Session
 
 
 def test_resolve_model_default() -> None:
@@ -320,3 +323,143 @@ def test_ask_stream_no_deltas_falls_back_to_part_text() -> None:
     chunks = list(ai.ask_stream("hello", session=session))
 
     assert chunks == ["Full response"]
+
+
+# ---------------------------------------------------------------------------
+# collect parameter
+# ---------------------------------------------------------------------------
+
+
+def test_session_prompt_v2_collect_true() -> None:
+    """V2 path: collect=True returns OpencodeResponse with text."""
+    session = Session(MagicMock(), "ses_1")
+    v2_msg = cast(
+        SessionMessage,
+        {
+            "id": "msg_1",
+            "type": "assistant",
+            "content": [{"type": "text", "text": "Hello from V2"}],
+            "time": {},
+        },
+    )
+    with patch.object(session, "_prompt_v2", return_value=v2_msg):
+        result = session.prompt("hi", collect=True)
+    assert isinstance(result, OpencodeResponse)
+    assert result.text == "Hello from V2"
+    assert result.events == []
+
+
+def test_session_prompt_v2_collect_false() -> None:
+    """V2 path: collect=False returns SessionMessage."""
+    session = Session(MagicMock(), "ses_1")
+    v2_msg = cast(
+        SessionMessage,
+        {
+            "id": "msg_1",
+            "type": "assistant",
+            "content": [{"type": "text", "text": "Hello"}],
+            "time": {},
+        },
+    )
+    with patch.object(session, "_prompt_v2", return_value=v2_msg):
+        result = session.prompt("hi", collect=False)
+    assert isinstance(result, dict)
+    assert result["type"] == "assistant"
+
+
+def test_session_prompt_v1_collect_true() -> None:
+    """V1 path (with model): collect=True returns OpencodeResponse."""
+    client = OpencodeClient(
+        base_url="http://localhost:9999",
+        httpx_client=httpx.Client(
+            transport=httpx.MockTransport(
+                lambda _: httpx.Response(
+                    200,
+                    json={
+                        "parts": [{"type": "text", "text": "Hello V1"}],
+                        "info": {"id": "msg_1", "time": {}},
+                    },
+                )
+            )
+        ),
+    )
+    session = Session(client, "ses_1")
+    result = session.prompt(
+        "hi", model={"providerID": "opencode", "modelID": "big-pickle"}, collect=True
+    )
+    assert isinstance(result, OpencodeResponse)
+    assert result.text == "Hello V1"
+    assert result.events == []
+
+
+def test_session_prompt_v1_collect_false() -> None:
+    """V1 path (with model): collect=False returns SessionMessage."""
+    client = OpencodeClient(
+        base_url="http://localhost:9999",
+        httpx_client=httpx.Client(
+            transport=httpx.MockTransport(
+                lambda _: httpx.Response(
+                    200,
+                    json={
+                        "parts": [{"type": "text", "text": "Hello V1"}],
+                        "info": {"id": "msg_1", "time": {}},
+                    },
+                )
+            )
+        ),
+    )
+    session = Session(client, "ses_1")
+    result = session.prompt(
+        "hi", model={"providerID": "opencode", "modelID": "big-pickle"}, collect=False
+    )
+    assert isinstance(result, dict)
+    assert result["type"] == "assistant"
+
+
+def test_opencode_collect_true() -> None:
+    """opencode(collect=True) returns OpencodeResponse."""
+    _opencode_state.clear()
+
+    mock_ai = MagicMock()
+    mock_ai.start = MagicMock()
+    mock_ai.close = MagicMock()
+    mock_session = MagicMock()
+    mock_session.id = "ses_collect"
+    mock_session.prompt.return_value = OpencodeResponse(text="answer from mock")
+    mock_ai.create_session.return_value = mock_session
+
+    with patch("opencode._opencode.Opencode", return_value=mock_ai):
+        result = opencode("test", collect=True)
+
+    assert isinstance(result, OpencodeResponse)
+    assert result.text == "answer from mock"
+    mock_ai.close.assert_called_once()
+    assert not _opencode_state
+    _opencode_state.clear()
+
+
+def test_opencode_collect_false_default() -> None:
+    """opencode() without collect returns bare string (default)."""
+    _opencode_state.clear()
+
+    mock_ai = MagicMock()
+    mock_ai.start = MagicMock()
+    mock_ai.close = MagicMock()
+    mock_session = MagicMock()
+    mock_session.id = "ses_no_collect"
+    mock_session.prompt.return_value = {
+        "id": "msg_1",
+        "type": "assistant",
+        "content": [{"type": "text", "text": "bare string"}],
+        "time": {},
+    }
+    mock_ai.create_session.return_value = mock_session
+
+    with patch("opencode._opencode.Opencode", return_value=mock_ai):
+        result = opencode("test")
+
+    assert isinstance(result, str)
+    assert result == "bare string"
+    mock_ai.close.assert_called_once()
+    assert not _opencode_state
+    _opencode_state.clear()
