@@ -9,7 +9,7 @@ print(f"Server URL: {server.url}")
 
 client = OpencodeClient(base_url=server.url)
 
-results = []
+results: list[str] = []
 
 
 def check(num: int, label: str, fn):
