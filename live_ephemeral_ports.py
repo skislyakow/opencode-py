@@ -1,9 +1,8 @@
 """Demo: ephemeral port selection — two servers, auto ports, cleanup on exit."""
 
 import atexit
-import time
 
-from opencode import create_opencode_server, OpencodeClient
+from opencode import OpencodeClient, create_opencode_server
 
 servers = []
 
