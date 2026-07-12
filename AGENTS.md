@@ -89,15 +89,17 @@ e14ea7b docs: update AGENTS.md for v0.6.0 and Task 2 completion
 - `async_opencode(prompt, keep=True)` — async version of `opencode()`
 - Structured output — `format={"type": "json_schema", "schema": {...}}` on `ask()` / `prompt()` / `opencode()`
 - Async full support — `AsyncOpendcode`, `AsyncOpendcodeClient`, `AsyncSession`
-- Streaming — `ask_stream()` (sync + async) via `/event` SSE, typed event models (`_stream_events.py` ~75 types)
+- Streaming — `ask_stream()` (sync + async) via `/event` SSE, typed event models (`_stream_events.py` ~75 types), `collect=True` via `StreamResult`/`AsyncStreamResult`
 - V2 session prompt via SSE — `Session.prompt()` uses `POST /api/session/{id}/prompt` + `/event` SSE subscription with V1 fallback
 - Ephemeral port — auto-picks free port when `port=None` (default)
 - `session_delete_message()` — `DELETE /session/{sessionID}/message/{messageID}` with `Session.delete_message()` convenience method
 - `scripts/check-upstream.py` — fetches upstream openapi.json, flags needed changes
 - `OpendcodeResponse` dataclass with `collect=True` — returns `text` + raw events from all high-level APIs
 - `collect` param on `Session.prompt()`, `Session.ask()`, `AsyncSession.prompt()`, `AsyncSession.ask()`, `opencode()`, `async_opencode()`
+- `StreamResult` / `AsyncStreamResult` — `ask_stream(collect=True)` returns iterable wrapper with `.events` and `.text`
 - 38/38 live endpoints tested against opencode v1.17.13
-- 52/52 unit tests passing (sync + async)
+- 61/61 unit tests passing (sync + async)
+- `StreamResult` / `AsyncStreamResult` — wrappers for `ask_stream(collect=True)` exposing `.events` and `.text`
 - Python 3.10 compatibility (`NotRequired` via `typing_extensions`)
 - `live.py`, `live_async.py`, `live_streaming.py`, `live_raw.py`, `live_stream_events.py` — interactive dialog scripts with `atexit` cleanup
 - **Pydantic response models** — `HealthResponse`, `SessionResponse`, `FileContentResponse`, `ProviderResponse`, `V1SessionResponse` and more
@@ -117,7 +119,7 @@ e14ea7b docs: update AGENTS.md for v0.6.0 and Task 2 completion
 
 4. ~~**No async support** — `OpencodeClient` is sync-only.~~ **DONE**: Full async support.
 
-5. **Streaming** — `ask_stream()` reads SSE events via `/event` but delta format may differ between server versions.
+5. **Streaming delta format** — `ask_stream()` reads SSE events via `/event` but delta format may differ between server versions. Current implementation tested against opencode v1.17.13.
 
 6. ~~**No upstream monitoring**~~ **DONE**: `scripts/check-upstream.py` fetches upstream.
 
@@ -315,10 +317,10 @@ refactor(client): extract error handling to _handle()
 
 ### Task 2: Response dataclass with raw events ✅
 - [x] Add `OpencodeResponse` dataclass: `text: str`, `events: list[Any]`
-- [ ] `ask_stream()` collect (deferred — generator can't cleanly return events)
+- [x] `ask_stream()` collect via `StreamResult`/`AsyncStreamResult`
 - [x] Add `collect=True/False` param
 - [x] `Session.prompt()` can optionally return `OpencodeResponse` instead of bare string
-- [ ] Tests for event collection (pending)
+- [x] Tests for event collection
 
 ### Task 3: V2 session prompt via SSE (replace V1 polling) ✅
 - [x] Audit `/global/event` SSE endpoint reliability in current opencode server
