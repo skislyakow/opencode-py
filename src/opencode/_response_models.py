@@ -1,10 +1,110 @@
+from __future__ import annotations
+
+from collections.abc import AsyncIterator, Iterator
 from dataclasses import dataclass, field
-from typing import Any, Generic, TypeVar
+from typing import Any, Generic, TypeVar, cast
 
 import httpx
 from pydantic import BaseModel, ConfigDict
 
 _T = TypeVar("_T")
+
+
+class StreamResult:
+    """Wraps ``ask_stream(collect=True)`` iteration.
+
+    Iterate for text chunks, then access ``.events`` for all raw SSE events
+    and ``.text`` for the full response.
+
+    Example::
+
+        stream = ai.ask_stream("hello", collect=True)
+        for chunk in stream:
+            print(chunk, end="")
+        # After consumption:
+        print(stream.events)   # list[StreamEvent]
+        print(stream.text)     # full text
+    """
+
+    def __init__(self, gen: Iterator[Any]) -> None:
+        self._gen = gen
+        self.events: list[Any] = []
+        self._text: str | None = None
+        self._chunks: list[str] = []
+
+    def __iter__(self) -> Iterator[str]:
+        return self
+
+    def __next__(self) -> str:
+        if self._text is not None:
+            raise StopIteration
+        while True:
+            try:
+                item = next(self._gen)
+            except StopIteration:
+                self._text = "".join(self._chunks)
+                raise
+            if isinstance(item, tuple) and len(item) == 2 and item[0] == "event":
+                self.events.append(item[1])
+            else:
+                chunk = cast(str, item)
+                self._chunks.append(chunk)
+                return chunk
+
+    @property
+    def text(self) -> str:
+        if self._text is None:
+            for _ in self:
+                pass
+        return self._text or ""
+
+
+class AsyncStreamResult:
+    """Async version of ``StreamResult`` for ``ask_stream(collect=True)``.
+
+    Example::
+
+        stream = await ai.ask_stream("hello", collect=True)
+        async for chunk in stream:
+            print(chunk, end="")
+        # After consumption:
+        print(stream.events)   # list[StreamEvent]
+        print(stream.text)     # full text (sync access after iteration)
+    """
+
+    def __init__(self, gen: AsyncIterator[Any]) -> None:
+        self._gen = gen
+        self.events: list[Any] = []
+        self._text: str | None = None
+        self._chunks: list[str] = []
+
+    def __aiter__(self) -> AsyncStreamResult:
+        return self
+
+    async def __anext__(self) -> str:
+        if self._text is not None:
+            raise StopAsyncIteration
+        while True:
+            try:
+                item = await self._gen.__anext__()
+            except StopAsyncIteration:
+                self._text = "".join(self._chunks)
+                raise
+            if isinstance(item, tuple) and len(item) == 2 and item[0] == "event":
+                self.events.append(item[1])
+            else:
+                chunk = cast(str, item)
+                self._chunks.append(chunk)
+                return chunk
+
+    @property
+    def text(self) -> str:
+        if self._text is None:
+            raise RuntimeError(
+                "Consume the async stream first (e.g. ``async for chunk in stream``) "
+                "before accessing .text"
+            )
+        return self._text
 
 
 class RawResponse(Generic[_T]):

@@ -31,7 +31,12 @@ from opencode._models import (
     UserMessage,
 )
 from opencode._opencode import Opencode, opencode
-from opencode._response_models import OpencodeResponse, RawResponse
+from opencode._response_models import (
+    AsyncStreamResult,
+    OpencodeResponse,
+    RawResponse,
+    StreamResult,
+)
 from opencode._server import OpencodeServer, create_opencode_server
 from opencode._session import Session
 from opencode._stream_events import (
@@ -54,6 +59,8 @@ except:  # noqa: E722
     __version__ = "0.0.0"
 
 __all__ = [
+    "AsyncStreamResult",
+    "StreamResult",
     "APIError",
     "APIConnectionError",
     "APIResponseValidationError",

@@ -7,7 +7,7 @@ from typing import Any, cast
 
 from opencode._client import OpencodeClient
 from opencode._models import SessionMessage
-from opencode._response_models import OpencodeResponse
+from opencode._response_models import OpencodeResponse, StreamResult
 from opencode._server import OpencodeServer, create_opencode_server
 from opencode._session import Session
 
@@ -171,6 +171,7 @@ class Opencode:
         *,
         files: list[dict[str, Any]] | None = None,
         session: Session | None = None,
+        collect: bool = False,
     ) -> Iterator[str]:
         import httpx
 
@@ -197,55 +198,64 @@ class Opencode:
         # Send prompt (V1 sync)
         self.client.session_send(session.id, body)
 
-        part_types: dict[str, str] = {}
-        parts_with_deltas: set[str] = set()
-        assistant_started = False
+        def gen() -> Iterator[Any]:
+            part_types: dict[str, str] = {}
+            parts_with_deltas: set[str] = set()
+            assistant_started = False
 
-        for line in response.iter_lines():
-            if not line.startswith("data: "):
-                continue
-            event = parse_stream_event(line[6:])
-            props = event.properties
+            for line in response.iter_lines():
+                if not line.startswith("data: "):
+                    continue
+                event = parse_stream_event(line[6:])
+                props = event.properties
 
-            # Skip events for other sessions
-            sid = props.get("sessionID")
-            if sid is not None and sid != session.id:
-                continue
+                if collect:
+                    yield ("event", event)
 
-            if event.type == "message.updated":
-                p_msg = MessageUpdatedProps.model_construct(**props)
-                if p_msg.info.get("role") == "assistant":
-                    assistant_started = True
+                # Skip events for other sessions
+                sid = props.get("sessionID")
+                if sid is not None and sid != session.id:
+                    continue
 
-            elif event.type == "message.part.updated":
-                p_part = MessagePartUpdatedProps.model_construct(**props)
-                part_id = p_part.part.get("id", "")
-                part_type = p_part.part.get("type", "")
-                if part_id and part_type:
-                    part_types[part_id] = part_type
-                if assistant_started and part_type == "text":
-                    text = p_part.part.get("text", "")
-                    if text and part_id not in parts_with_deltas:
-                        yield text
+                if event.type == "message.updated":
+                    p_msg = MessageUpdatedProps.model_construct(**props)
+                    if p_msg.info.get("role") == "assistant":
+                        assistant_started = True
 
-            elif event.type == "message.part.delta":
-                p_delta = MessagePartDeltaProps.model_construct(**props)
-                part_id = p_delta.partID
-                part_type = part_types.get(part_id)
-                if assistant_started and part_type == "text":
-                    delta = p_delta.delta
-                    if delta:
-                        parts_with_deltas.add(part_id)
-                        yield delta
+                elif event.type == "message.part.updated":
+                    p_part = MessagePartUpdatedProps.model_construct(**props)
+                    part_id = p_part.part.get("id", "")
+                    part_type = p_part.part.get("type", "")
+                    if part_id and part_type:
+                        part_types[part_id] = part_type
+                    if assistant_started and part_type == "text":
+                        text = p_part.part.get("text", "")
+                        if text and part_id not in parts_with_deltas:
+                            yield text
 
-            elif event.type in ("session.status",):
-                p_status = SessionStatusProps.model_construct(**props)
-                status = p_status.status
-                if isinstance(status, dict) and status.get("type") == "idle":
+                elif event.type == "message.part.delta":
+                    p_delta = MessagePartDeltaProps.model_construct(**props)
+                    part_id = p_delta.partID
+                    part_type = part_types.get(part_id)
+                    if assistant_started and part_type == "text":
+                        delta = p_delta.delta
+                        if delta:
+                            parts_with_deltas.add(part_id)
+                            yield delta
+
+                elif event.type in ("session.status",):
+                    p_status = SessionStatusProps.model_construct(**props)
+                    status = p_status.status
+                    if isinstance(status, dict) and status.get("type") == "idle":
+                        break
+
+                elif event.type == "session.idle":
                     break
 
-            elif event.type == "session.idle":
-                break
+        raw = gen()
+        if collect:
+            return StreamResult(raw)
+        return cast(Iterator[str], raw)
 
 
 def _extract_text(msg: SessionMessage) -> str:

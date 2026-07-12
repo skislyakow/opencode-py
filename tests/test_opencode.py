@@ -325,6 +325,97 @@ def test_ask_stream_no_deltas_falls_back_to_part_text() -> None:
     assert chunks == ["Full response"]
 
 
+def test_ask_stream_collect_true_returns_stream_result() -> None:
+    """ask_stream(collect=True) returns StreamResult with events + text."""
+    from opencode import Opencode
+    from opencode._response_models import StreamResult
+
+    session = MagicMock()
+    session.id = "ses_1"
+
+    events = [
+        'data: {"type":"message.updated","properties":{"info":{"role":"user"}}}\n\n',
+        'data: {"type":"message.part.updated","properties":{"sessionID":"ses_1","part":{"id":"p_u","type":"text","text":"hi"}}}\n\n',
+        'data: {"type":"message.updated","properties":{"info":{"role":"assistant"}}}\n\n',
+        'data: {"type":"message.part.updated","properties":{"sessionID":"ses_1","part":{"id":"p_t","type":"text","text":""}}}\n\n',
+        'data: {"type":"message.part.delta","properties":{"sessionID":"ses_1","partID":"p_t","delta":"Hello"}}\n\n',
+        'data: {"type":"message.part.delta","properties":{"sessionID":"ses_1","partID":"p_t","delta":" world"}}\n\n',
+        'data: {"type":"session.status","properties":{"status":{"type":"idle"}}}\n\n',
+    ]
+    mock_client = MagicMock()
+    mock_client.event_subscribe.return_value = _make_sse_response(events)
+    mock_client.session_send.return_value = MagicMock()
+
+    ai = Opencode(model="opencode/big-pickle")
+    ai._client = mock_client
+    stream = ai.ask_stream("hello", session=session, collect=True)
+
+    assert isinstance(stream, StreamResult)
+    chunks = list(stream)
+    assert chunks == ["Hello", " world"]
+    assert stream.text == "Hello world"
+    # 7 SSE lines = 7 events collected
+    assert len(stream.events) == 7
+    # First event should be message.updated
+    assert stream.events[0].type == "message.updated"
+
+
+def test_ask_stream_collect_no_events_when_no_events_yielded() -> None:
+    """collect=True with no events still works."""
+    from opencode import Opencode
+    from opencode._response_models import StreamResult
+
+    session = MagicMock()
+    session.id = "ses_1"
+
+    # Only non-data lines (should be ignored)
+    response = httpx.Response(200, text="not data\nnothing here\n")
+    mock_client = MagicMock()
+    mock_client.event_subscribe.return_value = response
+    mock_client.session_send.return_value = MagicMock()
+
+    ai = Opencode(model="opencode/big-pickle")
+    ai._client = mock_client
+    stream = ai.ask_stream("hello", session=session, collect=True)
+
+    assert isinstance(stream, StreamResult)
+    chunks = list(stream)
+    assert chunks == []
+    assert stream.text == ""
+    assert stream.events == []
+
+
+def test_ask_stream_collect_false_backward_compat() -> None:
+    """ask_stream(collect=False) behaves like old ask_stream (no events)."""
+    from opencode import Opencode
+    from opencode._response_models import StreamResult
+
+    session = MagicMock()
+    session.id = "ses_1"
+
+    events = [
+        'data: {"type":"message.updated","properties":{"info":{"role":"user"}}}\n\n',
+        'data: {"type":"message.part.updated","properties":{"sessionID":"ses_1","part":{"id":"p_u","type":"text","text":"hi"}}}\n\n',
+        'data: {"type":"message.updated","properties":{"info":{"role":"assistant"}}}\n\n',
+        'data: {"type":"message.part.updated","properties":{"sessionID":"ses_1","part":{"id":"p_t","type":"text","text":""}}}\n\n',
+        'data: {"type":"message.part.delta","properties":{"sessionID":"ses_1","partID":"p_t","delta":"Hi"}}\n\n',
+        'data: {"type":"message.part.delta","properties":{"sessionID":"ses_1","partID":"p_t","delta":" there"}}\n\n',
+        'data: {"type":"session.status","properties":{"status":{"type":"idle"}}}\n\n',
+    ]
+    mock_client = MagicMock()
+    mock_client.event_subscribe.return_value = _make_sse_response(events)
+    mock_client.session_send.return_value = MagicMock()
+
+    ai = Opencode(model="opencode/big-pickle")
+    ai._client = mock_client
+    result = ai.ask_stream("hello", session=session, collect=False)
+
+    # Should be a raw generator/iterator, not StreamResult
+    assert not isinstance(result, StreamResult)
+    chunks = list(result)
+    assert chunks == ["Hi", " there"]
+
+
 # ---------------------------------------------------------------------------
 # collect parameter
 # ---------------------------------------------------------------------------
