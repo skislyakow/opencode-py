@@ -89,6 +89,20 @@ with Opencode() as ai:
 prompt, and yields each text chunk as it arrives. Reasoning blocks, user echo,
 and duplicate text are automatically filtered out.
 
+When called with `collect=True`, `ask_stream()` returns a `StreamResult`
+wrapper (or `AsyncStreamResult` for async) that exposes `.events` and `.text`
+after iteration:
+
+```python
+with Opencode() as ai:
+    stream = ai.ask_stream("Write a function", collect=True)
+    for chunk in stream:
+        print(chunk, end="")
+    # After consumption:
+    print(stream.text)     # full response text
+    print(stream.events)   # all raw SSE events
+```
+
 V2 `Session.prompt()` also uses the `/event` SSE endpoint internally —
 it sends a non-blocking V2 prompt, subscribes to events, and waits for
 `session.next.step.ended` before assembling the response. V1 blocking prompt
@@ -119,7 +133,8 @@ with Opencode() as ai:
 ```
 
 Works with: `Session.prompt()`, `Session.ask()`, `Opencode.ask()`,
-`opencode()`, `async_opencode()`, and their async counterparts.
+`opencode()`, `async_opencode()`, `ask_stream(collect=True)`, and their
+async counterparts.
 
 #### Typed stream events
 
@@ -530,6 +545,17 @@ async with AsyncOpendcode() as ai:
         print(chunk, end="")
 ```
 
+Async streaming also supports `collect`:
+
+```python
+async with AsyncOpendcode() as ai:
+    stream = ai.ask_stream("Write a poem", collect=True)
+    async for chunk in stream:
+        print(chunk, end="")
+    print(stream.events)  # raw SSE events
+    print(stream.text)    # full response text
+```
+
 ### Async conversations
 
 ```python
@@ -573,7 +599,24 @@ response = session.prompt("Hello", collect=True)
 # response.events  -> list[StreamEvent]  (raw SSE events)
 ```
 
-Returned by all high-level APIs when `collect=True`.
+Returned by `Session.prompt()`, `Session.ask()`, `Opencode.ask()`,
+`opencode()`, `async_opencode()`, and their async counterparts when
+`collect=True`.
+
+### StreamResult / AsyncStreamResult
+
+```python
+from opencode import StreamResult, AsyncStreamResult
+
+stream = ai.ask_stream("Hello", collect=True)
+# for chunk in stream:    — iterate text chunks
+# stream.events           -> list[StreamEvent]  (after iteration)
+# stream.text             -> str                (full response text)
+```
+
+`StreamResult` (sync) and `AsyncStreamResult` (async) wrap the
+`ask_stream(collect=True)` iteration, collecting all SSE events for
+later inspection.
 
 ### Pydantic response models
 

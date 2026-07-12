@@ -88,6 +88,19 @@ with Opencode() as ai:
 запрос и выдаёт каждый текстовый фрагмент по мере поступления. Reasoning-блоки,
 эхо пользователя и дублирующийся текст автоматически фильтруются.
 
+С `collect=True` `ask_stream()` возвращает `StreamResult` (или
+`AsyncStreamResult` для async), который сохраняет `.events` и `.text`:
+
+```python
+with Opencode() as ai:
+    stream = ai.ask_stream("Напиши функцию", collect=True)
+    for chunk in stream:
+        print(chunk, end="")
+    # После итерации:
+    print(stream.text)     # полный текст ответа
+    print(stream.events)   # все сырые SSE события
+```
+
 V2 `Session.prompt()` также использует `/event` SSE внутри — отправляет
 неблокирующий V2 запрос, подписывается на события и ждёт
 `session.next.step.ended` перед сборкой ответа. V1 блокирующий промпт
@@ -118,7 +131,7 @@ with Opencode() as ai:
 ```
 
 Работает с: `Session.prompt()`, `Session.ask()`, `Opencode.ask()`,
-`opencode()`, `async_opencode()`.
+`opencode()`, `async_opencode()`, `ask_stream(collect=True)`.
 
 #### Типизированные события стриминга
 
@@ -529,6 +542,17 @@ async with AsyncOpendcode() as ai:
         print(chunk, end="")
 ```
 
+Асинхронный стриминг тоже поддерживает `collect`:
+
+```python
+async with AsyncOpendcode() as ai:
+    stream = ai.ask_stream("Write a poem", collect=True)
+    async for chunk in stream:
+        print(chunk, end="")
+    print(stream.events)  # сырые SSE события
+    print(stream.text)    # полный текст ответа
+```
+
 ### Async диалоги
 
 ```python
@@ -572,7 +596,23 @@ response = session.prompt("Hello", collect=True)
 # response.events  -> list[StreamEvent]   (сырые SSE события)
 ```
 
-Возвращается всеми высокоуровневыми API при `collect=True`.
+Возвращается `Session.prompt()`, `Session.ask()`, `Opencode.ask()`,
+`opencode()`, `async_opencode()` и их async-версиями при `collect=True`.
+
+### StreamResult / AsyncStreamResult
+
+```python
+from opencode import StreamResult, AsyncStreamResult
+
+stream = ai.ask_stream("Hello", collect=True)
+# for chunk in stream:     — итерация по фрагментам текста
+# stream.events            -> list[StreamEvent]  (после итерации)
+# stream.text              -> str                (полный текст ответа)
+```
+
+`StreamResult` (sync) и `AsyncStreamResult` (async) оборачивают
+`ask_stream(collect=True)`, собирая все SSE события для последующего
+просмотра.
 
 ### Pydantic response модели
 
