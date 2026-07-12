@@ -1,8 +1,10 @@
 import asyncio
 import atexit
 import sys
+from typing import cast
 
 from opencode._async_opencode import AsyncOpendcode
+from opencode._models import SessionMessage
 from opencode._opencode import _extract_text, _resolve_model
 
 _ai: AsyncOpendcode | None = None
@@ -46,7 +48,7 @@ async def main() -> None:
         msg = await session.prompt(
             prompt, model=_resolve_model(model=_ai._model, config=_ai._config)
         )
-        print(_extract_text(msg))
+        print(_extract_text(cast("SessionMessage", msg)))
 
 
 if __name__ == "__main__":

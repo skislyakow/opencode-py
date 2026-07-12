@@ -16,7 +16,9 @@ def check(num: int, label: str, fn):
     try:
         result = fn()
         pretty = (
-            result if isinstance(result, (str, int, bool, type(None))) else type(result).__name__
+            result
+            if isinstance(result, (str, int, bool, type(None)))
+            else type(result).__name__
         )
         if isinstance(result, dict):
             pretty = f"dict keys={list(result.keys())[:5]}"
@@ -54,10 +56,16 @@ check(15, "V2 Providers", lambda: client.v2_provider_list())
 check(
     16,
     "Tool list",
-    lambda: client.tool_list(provider="anthropic", model="claude-sonnet-4-20250514"),
+    lambda: client.tool_list(
+        provider="anthropic", model="claude-sonnet-4-20250514"
+    ),
 )
 check(
-    17, "Tool IDs", lambda: client.tool_ids(provider="anthropic", model="claude-sonnet-4-20250514")
+    17,
+    "Tool IDs",
+    lambda: client.tool_ids(
+        provider="anthropic", model="claude-sonnet-4-20250514"
+    ),
 )
 
 # 18-21: system info
@@ -105,7 +113,11 @@ check(36, "PTY shells", lambda: client.pty_shells())
 check(37, "Instance dispose (dry)", lambda: client.instance_dispose())
 
 # V2 prompt (will queue but not process without API key)
-check(38, "V2 prompt", lambda: client.v2_session_prompt(sid, {"text": "Hello"}, delivery="queue"))
+check(
+    38,
+    "V2 prompt",
+    lambda: client.v2_session_prompt(sid, {"text": "Hello"}, delivery="queue"),
+)
 
 # Print results
 print(f"\n--- Results ({len(results)} checks) ---")
