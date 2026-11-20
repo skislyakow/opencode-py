@@ -1,5 +1,42 @@
 # Changelog
 
+## Unreleased — opencode v2 API (breaking)
+
+opencode v2 (tested with v2.3.2) removed the v1 HTTP API: every endpoint now
+lives under `/api/*` behind HTTP Basic auth, so v1 calls such as
+`POST /session` fail with `405 Method Not Allowed`.
+
+- fix(server): `create_opencode_server()` generates a password, passes it via
+  `OPENCODE_SERVER_PASSWORD` and exposes `server.password` / `server.username`
+- feat(client): `password` / `username` on `OpencodeClient` and
+  `AsyncOpendcodeClient` (Basic auth; defaults to `$OPENCODE_SERVER_PASSWORD`)
+- fix(client): all methods rewritten for the v2 API; `{"data": ...}` envelope
+  unwrapped, paginated lists return `PageResponse`, `directory` sent as
+  `location[directory]`, SSE subscribe raises on HTTP errors
+- fix(client): `copy()` / `with_options()` ignored overrides (inverted `is_given`)
+- refactor(client): `_async_client.py` is generated from `_client.py`
+- fix(session): `Session.prompt()` uses `POST /api/session/{id}/prompt` + `/api/event`
+  until `session.execution.*`; multi-step assistant messages are merged; execution
+  failures raise `OpencodeError`; `wait=False` returns the queued user message
+- fix(opencode): `Opencode(model=...)` sets the model at session creation;
+  `prompt(model=...)` switches it via `POST /api/session/{id}/model`
+- fix(stream): `ask_stream()` yields `session.text.delta`
+- refactor(tools): tools run on the server; `ToolExecutor` now answers
+  `permission.asked` requests (`decide()`), local tool execution removed
+- refactor(models): response models and ~100 SSE event models regenerated from
+  the v2 `/openapi.json`
+- chore(scripts): `check-upstream.py` checks every SDK endpoint against a spec
+  (default: the local `opencode serve`)
+
+Removed (no v2 equivalent): `workspace` option, structured output (`format=` now
+raises), `session_send` / v1 message endpoints, `session_delete_message`,
+`session_todo`, share/unshare, LSP/formatter/tool-list/question/TUI/sync/workspace
+endpoints, `max_tool_rounds` / `poll_interval` / `references` parameters.
+Renamed: `v2_session_*` -> `session_*`, `file_*` -> `fs_*`, `app_agents` ->
+`agent_list`, `v2_model_list` -> `model_list`, `v2_provider_*` -> `provider_*`,
+`session_abort` -> `session_interrupt`, `global_event` -> `event_subscribe`;
+`health()` now returns `ServerInfoResponse` from `GET /api/info`.
+
 ## v0.5.1 (2026-07-05)
 
 - feat(client): add `session_delete_message()` endpoint (`DELETE /session/{sessionID}/message/{messageID}`) — low-level + `Session.delete_message()` / `AsyncSession.delete_message()` convenience methods

@@ -65,6 +65,29 @@ opencode-py/
     └── opencode-docs-ru.md    # Russian docs from opencode.ai
 ```
 
+## opencode v2 API (since opencode v2.x)
+
+opencode v2 (tested v2.3.2) dropped the v1 HTTP API. Facts the SDK relies on:
+- Every endpoint is under `/api/*` and needs HTTP Basic auth, user `opencode`,
+  password from `OPENCODE_SERVER_PASSWORD` (or `OPENCODE_PASSWORD`). Without a
+  password env var `opencode serve` generates one and prints `server password ...`.
+- The spec is served by the running server at `GET /openapi.json` (auth required).
+  `python scripts/check-upstream.py` starts a server and checks every SDK path exists.
+- Responses are wrapped `{"data": ..., "location": {...}}`; paginated ones add `cursor`.
+- Directory scoping: `location[directory]=...` query param (deepObject); extra query
+  params are tolerated by every endpoint. Session create also takes `location` in the body.
+- The model is part of the session (`POST /api/session {model: {providerID, id}}`,
+  switch with `POST /api/session/{id}/model`). The prompt body is just `{text, files,
+  agents, skills, delivery}` — no model, no structured-output `format`.
+- `GET /api/event` SSE: `data: {"id","type","location","data": {...}}`, `: heartbeat` every 15s.
+  A prompt run: `session.inbox.enqueued` → `session.execution.started` →
+  `session.inbox.delivered` (inboxID = prompt message id) → step/text/reasoning/tool
+  events → `session.execution.succeeded|failed|interrupted`.
+- Tools run on the server. With an `ask` permission rule the server emits
+  `permission.asked`; reply via `POST /api/session/{id}/permission/{requestID}/reply`
+  `{decision: once|always|reject}`. A reject ends the run (`execution.interrupted`).
+- `POST /api/experimental/session/{id}/wait` blocks until idle (204).
+
 ## Current State (commit history)
 
 ```
@@ -111,7 +134,10 @@ e14ea7b docs: update AGENTS.md for v0.6.0 and Task 2 completion
 
 ### Known issues to fix
 
-1. **Delivery enum mismatch** — npm v1.17.13 uses `"steer"/"queue"`, but upstream `dev` branch source also uses `"steer"/"queue"`. The local clone (`C:\Code\opencode`) has been modified to use `"immediate"/"deferred"` but this is NOT yet upstream. When upstream switches, update `_client.py:delivery="queue"` and `_async_client.py` to `"deferred"`. Run `scripts/check-upstream.py` to monitor.
+0. **opencode v2 migration** — done (see "opencode v2 API" above). `web/index.html`
+   still uses the v1 API and needs porting.
+
+1. **(v1, obsolete) Delivery enum mismatch** — npm v1.17.13 uses `"steer"/"queue"`, but upstream `dev` branch source also uses `"steer"/"queue"`. The local clone (`C:\Code\opencode`) has been modified to use `"immediate"/"deferred"` but this is NOT yet upstream. When upstream switches, update `_client.py:delivery="queue"` and `_async_client.py` to `"deferred"`. Run `scripts/check-upstream.py` to monitor.
 
 2. ~~**Config format** — `Opencode(config={"model": "anthropic/..."})` fails because config expects `provider.{id}.options.apiKey` format.~~ **FIXED**: `opencode(model=...)` no longer puts model in server config — passes it per-request.
 
@@ -132,11 +158,13 @@ Opencode.__enter__()
   → OpencodeClient(base_url, ...)   # httpx client
   → return self
 Opencode.ask(prompt)
-  → create_session()
+  → create_session()                        # POST /api/session {model, location}
   → Session.prompt(text)
-    → v2_session_prompt(delivery="queue")  # send prompt
-    → v2_session_context()                  # poll until assistant message
-  → _extract_text(message)                  # extract text content
+    → event_subscribe()                     # GET /api/event (before prompting)
+    → session_prompt()                      # POST /api/session/{id}/prompt
+    → _PromptWatch                          # until session.execution.* for our prompt
+    → session_context() + _build_reply()    # merge assistant messages after the prompt
+  → _extract_text(message)                  # join text parts
 Opencode.__exit__()
   → OpencodeClient.close()
   → OpencodeServer.close()          # taskkill /T /F (win32) or SIGTERM (unix)
@@ -174,44 +202,37 @@ _request("GET"|"POST"|"DELETE"|"PATCH", path, params, json_body)
 with automatic `directory`/`workspace` query param injection via `_merge_params()`.
 
 ### Correct API paths (OpenAPI spec)
-V2 session operations:
+Core session operations (all under `/api`, Basic auth):
 ```
-POST /api/session/{sessionID}/prompt    — send prompt
-POST /api/session/{sessionID}/wait      — wait for idle (204, BROKEN in v1.17.13)
-GET  /api/session/{sessionID}/context   — get context messages (used for polling)
-GET  /api/session/{sessionID}/message   — list messages (paginated)
-POST /api/session/{sessionID}/compact   — compact
-GET  /api/session                       — list sessions
+POST /api/session                                — create (model, agent, location, permissions)
+POST /api/session/{sessionID}/prompt             — enqueue prompt (returns user message)
+POST /api/experimental/session/{sessionID}/wait  — block until idle (204)
+GET  /api/session/{sessionID}/context            — context messages (chronological)
+GET  /api/session/{sessionID}/message            — messages (paginated, newest first)
+POST /api/session/{sessionID}/model              — switch model
+POST /api/session/{sessionID}/interrupt          — abort
+GET  /api/event                                  — SSE event stream
 ```
 
-All other endpoints use V1 paths (see AGENTS.md of the upstream repo or inline comments in `_client.py`).
+`_async_client.py` is generated from `_client.py` by a mechanical sync→async
+transform — edit `_client.py`, then run `python scripts/gen-async-client.py` and
+`ruff format src/opencode/_async_client.py`; never
+edit the async client by hand.
 
 ### Tool Execution
 ```
-Session.ask(text, tool_executor=ToolExecutor())
-  → send user message (POST /session/:id/message)
-  → if tool-use parts: execute via ToolExecutor, send results, loop
-  → if no tool-use and not confirmed: auto-confirm "Exit plan mode"
-  → if no tool-use and confirmed: return text
+Tools run on the opencode server.
+Session.prompt(text, tool_executor=...)   # Session.ask() defaults to ToolExecutor()
+  → on permission.asked: tool_executor.decide(request) -> "once" | "reject"
+  → no tool_executor: reject (logged)
 
 ToolExecutor:
-  - permissions: allow/ask/deny per tool
-  - default: bash=ask, others=allow
-  - tools: bash, write, edit, read, glob, grep
+  - permissions: allow/ask/deny per permission action (shell, edit, ...)
+  - default: shell/bash=ask, others=allow
 ```
 
 ### Structured Output
-```
-prompt() / ask() / opencode() / async_opencode()
-  accept: format={"type": "json_schema", "schema": {...}, "retryCount": 2}
-  → body["format"] = format  (passed to V1 POST /session/:id/message)
-  → server injects StructuredOutput tool with toolChoice: "required"
-  → response may include "structured" field with parsed JSON
-  → _extract_text() returns JSON string when structured present
-
-Schema: opencode/big-pickle (DeepSeek) does NOT support tool_choice="required"
-        Need Claude/GPT-4 with API key.
-```
+Not available in the opencode v2 API; `format=` raises `OpencodeError`.
 
 ## Binary Management
 
@@ -351,8 +372,8 @@ python demo.py
 # Try a simple interactive test
 python -c "
 from opencode import OpencodeClient, create_opencode_server
-s = create_opencode_server()  # auto-port
-c = OpencodeClient(base_url=s.url)
+s = create_opencode_server()  # auto-port + random password
+c = OpencodeClient(base_url=s.url, password=s.password)
 print('Health:', c.health())
 c.close()
 s.close()

@@ -3,21 +3,17 @@
 Usage:
     python live_stream_events.py "Your prompt here"
 
-Shows how to subscribe to raw SSE events and use the typed Pydantic models
-(StreamEvent, MessagePartDeltaProps, MessageUpdatedProps, etc.)
+Subscribes to the raw v2 event stream (``GET /api/event``) and uses the typed
+Pydantic models (StreamEvent, SessionTextDeltaProps, ...).
 """
 
 import sys
-from typing import Any
-
-import httpx
 
 from opencode import Opencode
 from opencode._stream_events import (
-    MessagePartDeltaProps,
-    MessagePartUpdatedProps,
-    MessageUpdatedProps,
-    SessionStatusProps,
+    SessionExecutionFailedProps,
+    SessionTextDeltaProps,
+    SessionToolInputStartedProps,
     parse_stream_event,
 )
 
@@ -25,80 +21,45 @@ from opencode._stream_events import (
 def main(prompt: str) -> None:
     with Opencode() as ai:
         session = ai.create_session()
-        body: dict[str, Any] = {"parts": [{"type": "text", "text": prompt}]}
 
-        # Subscribe to raw SSE stream before sending
-        response = ai.client.event_subscribe()
-        assert isinstance(response, httpx.Response)
-
-        ai.client.session_send(session.id, body)
+        # Subscribe to the raw SSE stream before sending
+        stream = ai.client.event_subscribe()
+        ai.client.session_prompt(session.id, prompt)
 
         assistant_text = ""
-        part_types: dict[str, str] = {}
-        parts_with_deltas: set[str] = set()
-        assistant_started = False
-
-        for line in response.iter_lines():
-            if not line.startswith("data: "):
-                continue
-
-            # --- Typed parsing ---
-            event = parse_stream_event(line[6:])
-            props = event.properties
-
-            # Skip other sessions
-            sid = props.get("sessionID")
-            if sid is not None and sid != session.id:
-                continue
-
-            # --- Pattern-match on typed models ---
-            if event.type == "message.updated":
-                p_msg = MessageUpdatedProps.model_construct(**props)
-                if p_msg.info.get("role") == "assistant" and not assistant_started:
-                    assistant_started = True
-                    print("[assistant started]")
-
-            elif event.type == "message.part.updated":
-                p_part = MessagePartUpdatedProps.model_construct(**props)
-                part_id = p_part.part.get("id", "")
-                part_type = p_part.part.get("type", "")
-                if part_id and part_type:
-                    part_types[part_id] = part_type
-                if part_type == "reasoning":
+        seen: list[str] = []
+        try:
+            for line in stream.iter_lines():
+                if not line.startswith("data:"):
                     continue
-                if assistant_started and part_type == "text":
-                    text = p_part.part.get("text", "")
-                    if text and part_id not in parts_with_deltas:
-                        print(text, end="", flush=True)
-                        assistant_text += text
+                event = parse_stream_event(line[5:].strip())
+                if event.session_id != session.id:
+                    continue
+                seen.append(event.type)
 
-            elif event.type == "message.part.delta":
-                p_delta = MessagePartDeltaProps.model_construct(**props)
-                part_id = p_delta.partID
-                part_type = part_types.get(part_id)
-                if assistant_started and part_type == "text" and p_delta.delta:
-                    parts_with_deltas.add(part_id)
-                    print(p_delta.delta, end="", flush=True)
-                    assistant_text += p_delta.delta
-
-            elif event.type == "session.status":
-                p_status = SessionStatusProps.model_construct(**props)
-                if p_status.status.get("type") == "idle":
+                if event.type == "session.text.delta":
+                    delta = SessionTextDeltaProps.model_construct(**event.properties).delta
+                    print(delta, end="", flush=True)
+                    assistant_text += delta
+                elif event.type == "session.tool.input.started":
+                    tool = SessionToolInputStartedProps.model_construct(**event.properties)
+                    print(f"\n[tool] {tool.name}")
+                elif event.type == "session.execution.failed":
+                    failed = SessionExecutionFailedProps.model_construct(**event.properties)
+                    print(f"\n[failed] {failed.error}")
+                    break
+                elif event.type in ("session.execution.succeeded", "session.execution.interrupted"):
                     print()
                     break
+        finally:
+            stream.close()
 
-            elif event.type == "session.idle":
-                print()
-                break
-
-        # Show typed properties summary
         print(f"\n--- Response length: {len(assistant_text)} chars ---")
-        print(f"--- Event types seen: {event.type} ---")
-        print(f"--- Properties keys: {list(props.keys())} ---")
+        print(f"--- Event types seen: {sorted(set(seen))} ---")
 
 
 if __name__ == "__main__":
     if len(sys.argv) < 2:
-        print("Usage: python live_stream_events.py \"your prompt\"")
+        print('Usage: python live_stream_events.py "your prompt"')
         sys.exit(1)
     main(sys.argv[1])

@@ -26,10 +26,9 @@ def main() -> int:
     )
     from opencode._models import SessionMessage  # noqa: F401
     from opencode._response_models import (  # noqa: F401
-        FileContentResponse,
-        HealthResponse,
+        PageResponse,
+        ServerInfoResponse,
         SessionResponse,
-        V1SessionResponse,
     )
     from opencode._tools import ToolExecutor as ToolExecutor2  # noqa: F401
 

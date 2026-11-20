@@ -85,9 +85,9 @@ with Opencode() as ai:
         print(chunk, end="")
 ```
 
-`ask_stream()` subscribes to the server's SSE (`/event`) endpoint, sends the
-prompt, and yields each text chunk as it arrives. Reasoning blocks, user echo,
-and duplicate text are automatically filtered out.
+`ask_stream()` subscribes to the server's SSE endpoint (`GET /api/event`), sends
+the prompt, and yields each `session.text.delta` chunk as it arrives. Reasoning
+is not yielded.
 
 When called with `collect=True`, `ask_stream()` returns a `StreamResult`
 wrapper (or `AsyncStreamResult` for async) that exposes `.events` and `.text`
@@ -103,10 +103,10 @@ with Opencode() as ai:
     print(stream.events)   # all raw SSE events
 ```
 
-V2 `Session.prompt()` also uses the `/event` SSE endpoint internally —
-it sends a non-blocking V2 prompt, subscribes to events, and waits for
-`session.next.step.ended` before assembling the response. V1 blocking prompt
-is used as a fallback when `model` or `format` is specified.
+`Session.prompt()` also uses the event stream internally — it sends
+`POST /api/session/{id}/prompt`, follows `/api/event` until the run ends
+(`session.execution.succeeded` / `interrupted`, or raises on `failed`), then
+reads the reply from `GET /api/session/{id}/context`.
 
 #### Response with raw events (`collect`)
 
@@ -142,47 +142,31 @@ For advanced use, the SDK exposes the full SSE event stream as typed Pydantic
 models via `parse_stream_event()`:
 
 ```python
-from opencode._stream_events import (
-    MessagePartDeltaProps,
-    MessagePartUpdatedProps,
-    MessageUpdatedProps,
-    SessionStatusProps,
-    parse_stream_event,
-)
+from opencode._stream_events import SessionTextDeltaProps, parse_stream_event
 
 with Opencode() as ai:
     session = ai.create_session()
-    response = ai.client.event_subscribe()  # raw SSE stream
-    ai.client.session_send(session.id, {"parts": [{"type": "text", "text": "Hi"}]})
+    stream = ai.client.event_subscribe()        # raw SSE stream (GET /api/event)
+    ai.client.session_prompt(session.id, "Hi")  # non-blocking
 
-    for line in response.iter_lines():
-        if not line.startswith("data: "):
+    for line in stream.iter_lines():
+        if not line.startswith("data:"):
             continue
-        event = parse_stream_event(line[6:])
-        props = event.properties
-
-        # Skip events for other sessions
-        if props.get("sessionID") not in (None, session.id):
+        event = parse_stream_event(line[5:].strip())
+        if event.session_id != session.id:     # skip other sessions
             continue
-
-        if event.type == "message.part.delta":
-            p = MessagePartDeltaProps.model_construct(**props)
-            print(p.delta, end="")  # typed access to .delta, .partID, etc.
-
-        elif event.type == "session.status":
-            p = SessionStatusProps.model_construct(**props)
-            if p.status.get("type") == "idle":
-                break
+        if event.type == "session.text.delta":
+            p = SessionTextDeltaProps.model_construct(**event.properties)
+            print(p.delta, end="")              # typed access to .delta
+        elif event.type in ("session.execution.succeeded", "session.execution.failed"):
+            break
+    stream.close()
 ```
 
-This works for all ~75 event types: `message.updated`, `session.status`,
-`session.next.text.delta`, `permission.asked`, `question.asked`, `file.edited`,
-and more.
-
-> **Note**: The example above shows V1 blocking prompt (`session_send`).
-> V2 `Session.prompt()` internally uses `session.next.*` events
-> (`session.next.prompted`, `session.next.step.ended`, etc.) delivered
-> through the same `/event` SSE endpoint.
+Models exist for all ~100 v2 event types (generated from the server's
+`/openapi.json`): `session.text.delta`, `session.tool.called`,
+`session.execution.succeeded`, `permission.asked`, `form.created`, ...
+`StreamEvent.properties` holds the event's `data` object.
 
 Use `parse_typed_event()` for automatic property validation. See
 [`live_stream_events.py`](#interactive-dialog) for a complete demo.
@@ -198,9 +182,9 @@ with Opencode() as ai:
     print(f"AI: {msg2}")
 ```
 
-`Session.prompt()` uses V2 non-blocking prompt + SSE subscription for
-faster responses. Falls back to V1 blocking prompt when `model` or
-`format` is specified (e.g. structured output).
+The session's model is fixed when it is created (`Opencode(model=...)` or
+`create_session(model=...)`); `session.prompt(text, model=...)` switches it
+first. `wait=False` only queues the prompt and returns the user message.
 
 ### Session methods
 
@@ -216,17 +200,18 @@ with Opencode() as ai:
     msgs = session.messages()      # paginated message list
 
     # Control
-    session.abort()                # abort current generation
-    session.delete_message("msg_xxx")  # permanently remove a message
+    session.abort()                # interrupt current execution
     session.compact()              # compact conversation
     session.fork()                 # fork into new session
+    session.delete()               # delete the session
 
     # Inspect
+    session.info()                 # SessionResponse (model, cost, tokens, ...)
     session.diff()                 # file changes made by AI
-    session.todo()                 # remaining TODOs
 ```
 
-Message deletion is permanent — the message and its parts are removed without reverting file changes. To undo changes made by a message, use `session.revert()` instead (or `session.fork()` to branch).
+Reverting is available on the client: `session_revert_stage()`,
+`session_revert_commit()`, `session_revert_clear()`.
 
 ### Multi-turn (keep mode)
 
@@ -239,70 +224,85 @@ r1 = opencode("My name is Alice", keep=True)
 r2 = opencode("What's my name?", keep=True)   # remembers conversation
 r3 = opencode("That's all", keep=False)        # closes server
 
-# Also accepts: model, format, port, directory, config, agent
+# Also accepts: model, port, directory, config, agent
 ```
 
-### Auto-tools (agentic tool execution)
+### Tools and permissions
+
+Tools (`shell`, `write`, `edit`, `read`, ...) run **on the opencode server**.
+When the server's permission rules say `ask`, it emits `permission.asked`;
+`Session.prompt()` answers it with the given `tool_executor`, and rejects it
+when there is none. A rejected permission ends the run.
 
 ```python
 r = opencode("Create a file called hello.txt", auto_tools=True)
 ```
 
-Available tools: `bash`, `write`, `edit`, `read`, `glob`, `grep`.
-
-By default `bash` asks for permission in the console, all others run without prompting.
-
-Custom permissions via `Session.ask()`:
+`auto_tools=True` (and `Session.ask()`) use a default `ToolExecutor`, which
+asks in the console before `shell`/`bash` and allows everything else.
 
 ```python
 from opencode import Opencode, ToolExecutor
 
 with Opencode() as ai:
-    session = ai.create_session()
+    session = ai.create_session(
+        # optional: make the server ask before every shell command
+        permissions=[{"action": "shell", "resource": "*", "effect": "ask"}],
+    )
     msg = session.ask(
-        "Write test.py with print('hello')",
-        tool_executor=ToolExecutor(
-            permissions={"write": "allow"},
-            workdir="/path/to/sandbox",      # restrict file operations
-        ),
-        max_tool_rounds=25,                    # safety limit
+        "Write test.py with print('hello') and run it",
+        tool_executor=ToolExecutor(permissions={"shell": "allow"}),
         quiet=True,                            # suppress tool logs
     )
 ```
-
-The first AI response in `ask()` enters plan mode — the SDK auto-confirms with
-`"Exit plan mode and proceed"` to make the model execute tools immediately.
 
 ### Low-level client (any endpoint)
 
 ```python
 with Opencode() as ai:
-    content = ai.client.file_read("src/main.py")
-    diff = ai.client.vcs_diff("HEAD~3")
-    config = ai.client.config_get()
-    session = ai.client.session_create()
-    ai.client.v2_session_prompt(session.id, {"text": "Hello"})
+    content = ai.client.fs_read("src/main.py")
+    diff = ai.client.vcs_diff()
+    models = ai.client.model_list()
+    session = ai.client.session_create(model="opencode/big-pickle")
+    ai.client.session_prompt(session.id, "Hello")   # non-blocking
+    ai.client.session_wait(session.id)              # block until idle
+    messages = ai.client.session_context(session.id)
 ```
 
-All client methods return typed Pydantic models — IDE autocomplete,
-`.model_dump()`, `.model_dump_json()`.
+All client methods target the opencode v2 API (`/api/*`) and return typed
+Pydantic models — IDE autocomplete, `.model_dump()`, `.model_dump_json()`.
+The `{"data": ...}` envelope is unwrapped; paginated lists
+(`session_list()`, `session_messages()`) return a `PageResponse` with `.data`
+and `.cursor`. The client's `directory` is sent as `location[directory]`.
 
 #### Connecting to an existing server
 
-Skip subprocess management by pointing at a running `opencode serve`:
+Skip subprocess management by pointing at a running `opencode serve`. The v2
+server requires HTTP Basic auth (user `opencode`); pass the server password or
+set `OPENCODE_SERVER_PASSWORD`:
 
 ```python
 from opencode import OpencodeClient
 
-client = OpencodeClient(base_url="http://127.0.0.1:4096", directory=".")
-health = client.health()
+client = OpencodeClient(base_url="http://127.0.0.1:4096", password="...", directory=".")
+info = client.health()   # GET /api/info -> ServerInfoResponse
 ```
 
 ```python
 from opencode import AsyncOpendcodeClient
 
-async with AsyncOpendcodeClient(base_url="http://127.0.0.1:4096") as client:
-    health = await client.health()
+async with AsyncOpendcodeClient(base_url="http://127.0.0.1:4096", password="...") as client:
+    info = await client.health()
+```
+
+`create_opencode_server()` generates a random password and exposes it as
+`server.password`:
+
+```python
+from opencode import OpencodeClient, create_opencode_server
+
+server = create_opencode_server()
+client = OpencodeClient(base_url=server.url, password=server.password)
 ```
 
 #### Cloning a client
@@ -327,7 +327,7 @@ with client.with_raw_response:
 raw.status_code              # 200
 raw.headers                  # httpx.Headers
 raw.content                  # bytes
-raw.parsed                   # HealthResponse (typed model)
+raw.parsed                   # ServerInfoResponse (typed model)
 raw.response                 # httpx.Response (full)
 ```
 
@@ -362,7 +362,7 @@ Full error class hierarchy:
 | `APIResponseValidationError` | — | Response doesn't match schema |
 | `APIStatusError` | 4xx/5xx | Base for HTTP error responses |
 | `BadRequestError` | 400 | Malformed request |
-| `AuthenticationError` | 401 | Invalid or missing API key |
+| `AuthenticationError` | 401 | Missing or wrong server password |
 | `PermissionDeniedError` | 403 | Access denied |
 | `NotFoundError` | 404 | Resource not found |
 | `ConflictError` | 409 | Resource conflict |
@@ -377,29 +377,8 @@ backoff + jitter. `Retry-After` and `retry-after-ms` headers are respected.
 
 ### Structured output
 
-```python
-with Opencode(model="anthropic/claude-sonnet-4") as ai:
-    result = ai.ask(
-        "Generate a user profile",
-        format={
-            "type": "json_schema",
-            "schema": {
-                "type": "object",
-                "properties": {
-                    "name": {"type": "string"},
-                    "age": {"type": "integer"},
-                },
-                "required": ["name", "age"],
-            },
-        },
-    )
-    # result is a JSON string matching the schema
-```
-
-Works with `opencode()`, `async_opencode()`, `Session.prompt()`, and `Session.ask()`.
-
-Requires a model that supports `tool_choice="required"` (Claude, GPT-4).
-The free `opencode/big-pickle` (DeepSeek) does NOT support this.
+Not supported by the opencode v2 API — passing `format=` raises
+`OpencodeError`.
 
 ### Debug logging
 
@@ -425,6 +404,8 @@ python web/server.py
 
 Built-in HTTP server + proxy to `opencode serve` — no extra dependencies.
 
+> **Note**: the web UI has not been ported to the opencode v2 API yet.
+
 ### Interactive dialog
 
 ```bash
@@ -433,7 +414,8 @@ python live_async.py      # async multi-turn dialog
 python live_streaming.py  # streaming dialog (reuse session)
 python live_raw.py        # with_raw_response demo (7 scenarios)
 python live_stream_events.py "Your prompt"  # typed SSE event inspection
-python demo.py            # full API coverage test (38 endpoints)
+python demo.py            # quick tour of the v2 API
+python test_live.py       # live check of 36 non-LLM endpoints
 ```
 
 All scripts clean up the server on exit via `atexit`.
@@ -443,26 +425,19 @@ All scripts clean up the server on exit via `atexit`.
 ```python
 from opencode import ToolExecutor
 
-# Default permissions:
-#   bash → "ask"   (prompts in console)
-#   write → "allow"
-#   edit  → "allow"
-#   read  → "allow"
-#   glob  → "allow"
-#   grep  → "allow"
-
+# Keyed by the permission action the server asks about.
+# Default: shell/bash -> "ask" (console prompt), everything else -> "allow".
 executor = ToolExecutor(
     permissions={
-        "bash": "allow",      # always allow
-        "write": "deny",       # always deny
-        "grep": "ask",         # ask each time
+        "shell": "allow",     # always allow
+        "edit": "deny",       # always reject
+        "read": "ask",        # call confirm()
     },
-    workdir="/path/to/sandbox",  # restrict file operations here
-    confirm=lambda name, inp: name != "bash",  # custom confirm function
+    confirm=lambda action, request: "rm" not in " ".join(request["resources"]),
 )
 
-# Use with Session.ask():
 session.ask("Create a project", tool_executor=executor)
+executor.decide({"action": "edit"})   # -> "reject"
 ```
 
 ### Binary management
@@ -512,8 +487,7 @@ All parameters for `Opendcode()` / `AsyncOpendcode()`:
 | `model` | `None` | Model name, e.g. `"opencode/big-pickle"` or `"provider/model"` |
 | `hostname` | `"127.0.0.1"` | Bind address for the server |
 | `port` | `None` (auto) | Port for the server; `None` picks first free port |
-| `directory` | `None` | Working directory passed to all API calls |
-| `workspace` | `None` | Workspace directory for the session |
+| `directory` | `None` | Working directory (session `location` and `location[directory]` on all API calls) |
 | `server_timeout` | `30.0` | Seconds to wait for server startup |
 | `client_timeout` | `300.0` | Seconds before HTTP request timeout |
 | `config` | `None` | Server config dict (see opencode docs) |
@@ -541,7 +515,8 @@ asyncio.run(main())
 
 ```python
 async with AsyncOpendcode() as ai:
-    async for chunk in ai.ask_stream("Write a poem"):
+    session = await ai.create_session()   # async ask_stream needs a session
+    async for chunk in ai.ask_stream("Write a poem", session=session):
         print(chunk, end="")
 ```
 
@@ -549,7 +524,8 @@ Async streaming also supports `collect`:
 
 ```python
 async with AsyncOpendcode() as ai:
-    stream = ai.ask_stream("Write a poem", collect=True)
+    session = await ai.create_session()
+    stream = ai.ask_stream("Write a poem", session=session, collect=True)
     async for chunk in stream:
         print(chunk, end="")
     print(stream.events)  # raw SSE events
@@ -584,7 +560,7 @@ result = await async_opencode("Hello", keep=True)
 result2 = await async_opencode("Still there?", keep=True)
 result3 = await async_opencode("Bye")
 
-# Also accepts: model, format, port, directory, config, agent, auto_tools
+# Also accepts: model, port, directory, config, agent, auto_tools
 ```
 
 ## Key types
@@ -621,8 +597,9 @@ later inspection.
 ### Pydantic response models
 
 ```python
-from opencode._response_models import HealthResponse, SessionResponse, FileContentResponse
+from opencode._response_models import ServerInfoResponse, SessionResponse, PageResponse
 
+# Generated from the server's /openapi.json; all fields optional, extras kept.
 # These are Pydantic BaseModel classes with:
 #   .model_dump() -> dict
 #   .model_dump_json() -> str

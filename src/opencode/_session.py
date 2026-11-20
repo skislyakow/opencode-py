@@ -1,102 +1,106 @@
 from __future__ import annotations
 
+import time
+from contextlib import closing
 from typing import Any, cast
 
 from opencode._client import OpencodeClient
+from opencode._errors import APITimeoutError, OpencodeError
+from opencode._logs import logger
 from opencode._models import SessionMessage
-from opencode._response_models import OpencodeResponse, V1SessionResponse
+from opencode._response_models import OpencodeResponse, PageResponse, SessionResponse
+from opencode._stream_events import StreamEvent, parse_stream_event
 from opencode._tools import ToolExecutor
+
+_FINISHED_EVENTS = {"session.execution.succeeded", "session.execution.interrupted"}
+
+
+def _check_format(format: dict[str, Any] | None) -> None:
+    if format is not None:
+        raise OpencodeError(
+            "Structured output (format=...) is not supported by the opencode v2 API"
+        )
+
+
+class _PromptWatch:
+    """Tracks SSE events for one prompt until its execution finishes.
+
+    Shared by :class:`Session` and :class:`AsyncSession`.
+    """
+
+    def __init__(self, session_id: str, prompt_id: str, *, collect: bool, quiet: bool):
+        self.session_id = session_id
+        self.prompt_id = prompt_id
+        self.collect = collect
+        self.quiet = quiet
+        self.delivered = False
+        self.done = False
+        self.events: list[StreamEvent] = []
+
+    def feed(self, line: str) -> StreamEvent | None:
+        """Process one SSE line; returns the event if it belongs to this session."""
+        if not line.startswith("data:"):
+            return None
+        event = parse_stream_event(line[5:].strip())
+        if event.session_id != self.session_id:
+            return None
+        if self.collect:
+            self.events.append(event)
+        props = event.properties
+        if event.type == "session.inbox.delivered" and props.get("inboxID") == self.prompt_id:
+            self.delivered = True
+        elif event.type == "session.tool.input.started" and not self.quiet:
+            print(f"\033[33m[Tool] {props.get('name', '')}\033[0m")
+        elif self.delivered and event.type in _FINISHED_EVENTS:
+            self.done = True
+        elif self.delivered and event.type == "session.execution.failed":
+            error = props.get("error") or {}
+            detail = error.get("message") if isinstance(error, dict) else None
+            raise OpencodeError(f"Session {self.session_id} failed: {detail or error}")
+        return event
+
+
+def _permission_reply(event: StreamEvent | None, tool_executor: ToolExecutor | None) -> str | None:
+    """Decision for a ``permission.asked`` event (``None`` for any other event)."""
+    if event is None or event.type != "permission.asked":
+        return None
+    request = event.properties
+    if tool_executor is not None:
+        return tool_executor.decide(request)
+    logger.warning(
+        "Rejecting permission request %s (%s): no tool_executor given",
+        request.get("id"),
+        request.get("action"),
+    )
+    return "reject"
+
+
+def _build_reply(messages: list[dict[str, Any]], prompt_id: str) -> SessionMessage:
+    """Merge every assistant message after the prompt into one reply message."""
+    ids = [m.get("id") for m in messages]
+    if prompt_id in ids:
+        start = ids.index(prompt_id) + 1
+    else:
+        users = [i for i, m in enumerate(messages) if m.get("type") == "user"]
+        start = users[-1] + 1 if users else 0
+    replies = [m for m in messages[start:] if m.get("type") == "assistant"]
+    if not replies:
+        return cast(SessionMessage, {"id": "", "type": "assistant", "content": [], "time": {}})
+    content = [part for m in replies for part in m.get("content", [])]
+    return cast(SessionMessage, {**replies[-1], "content": content})
+
+
+def _user_message(sent: Any, text: str) -> SessionMessage:
+    return cast(
+        SessionMessage,
+        {"id": sent.id or "", "type": "user", "text": text, "time": sent.time or {}},
+    )
 
 
 class Session:
     def __init__(self, client: OpencodeClient, session_id: str):
         self._client = client
         self.id = session_id
-        self._auto_confirmed: bool = False
-
-    def _prompt_v2(
-        self,
-        text: str,
-        *,
-        files: list[dict[str, Any]] | None = None,
-        agents: list[dict[str, Any]] | None = None,
-        references: list[dict[str, Any]] | None = None,
-        timeout: float = 600.0,
-    ) -> SessionMessage | None:
-        """V2 prompt via SSE subscription. Returns None on failure (falls back to V1)."""
-        import time as _time
-
-        import httpx
-
-        from opencode._stream_events import parse_stream_event
-
-        try:
-            response = self._client.event_subscribe()
-            assert isinstance(response, httpx.Response)
-
-            prompt_body: dict[str, Any] = {"text": text}
-            if files:
-                prompt_body["files"] = files
-            if agents:
-                prompt_body["agents"] = agents
-            if references:
-                prompt_body["references"] = references
-
-            # Send V2 prompt (non-blocking)
-            self._client.v2_session_prompt(self.id, prompt_body, delivery="queue")
-
-            # Wait for step.ended for our session
-            start = _time.time()
-            our_prompt_seen = False
-
-            for line in response.iter_lines():
-                if _time.time() - start > timeout:
-                    break
-
-                if not line.startswith("data: "):
-                    continue
-
-                event = parse_stream_event(line[6:])
-                props = event.properties
-
-                sid = props.get("sessionID")
-                if sid is not None and sid != self.id:
-                    continue
-
-                if event.type == "session.next.prompted":
-                    our_prompt_seen = True
-
-                if event.type == "session.next.step.ended" and our_prompt_seen:
-                    _time.sleep(0.2)
-                    break
-
-            if not our_prompt_seen:
-                return None
-
-            # Read context to get the assistant message
-            ctx = self._client.v2_session_context(self.id)
-            messages: list[Any] = ctx.get("data", []) if isinstance(ctx, dict) else ctx
-
-            for msg in reversed(messages):
-                if isinstance(msg, dict) and msg.get("type") == "assistant":
-                    parts_list: list[dict[str, Any]] = []
-                    for p in msg.get("content", []):
-                        ptype = p.get("type", "")
-                        if ptype in ("text", "reasoning", "tool"):
-                            parts_list.append({"type": ptype, "text": p.get("text", "")})
-
-                    return cast(SessionMessage, {
-                        "id": msg.get("id", ""),
-                        "type": "assistant",
-                        "content": parts_list,
-                        "model": msg.get("model"),
-                        "time": msg.get("time", {}),
-                    })
-
-            return None
-
-        except Exception:
-            return None
 
     def prompt(
         self,
@@ -104,179 +108,104 @@ class Session:
         *,
         files: list[dict[str, Any]] | None = None,
         agents: list[dict[str, Any]] | None = None,
-        references: list[dict[str, Any]] | None = None,
-        model: dict[str, str] | None = None,
+        skills: list[dict[str, Any]] | None = None,
+        model: str | dict[str, str] | None = None,
         format: dict[str, Any] | None = None,
         wait: bool = True,
-        poll_interval: float = 0.5,
         poll_timeout: float = 600.0,
         collect: bool = False,
+        tool_executor: ToolExecutor | None = None,
+        quiet: bool = True,
     ) -> OpencodeResponse | SessionMessage:
-        # Try V2 + SSE first (unless model/format specified — not supported by V2)
-        if wait and model is None and format is None:
-            v2_result = self._prompt_v2(
-                text, files=files, agents=agents, references=references, timeout=poll_timeout,
+        """Send a prompt and (by default) wait for the assistant's reply.
+
+        Uses ``POST /api/session/{id}/prompt`` and follows ``/api/event`` until
+        the execution finishes. ``model`` switches the session model first.
+        Permission requests are answered by ``tool_executor`` (rejected if
+        ``None``). With ``wait=False`` the queued user message is returned.
+        """
+        _check_format(format)
+        if model is not None:
+            self._client.session_switch_model(self.id, model)
+        if not wait:
+            sent = self._client.session_prompt(
+                self.id, text, files=files, agents=agents, skills=skills
             )
-            if v2_result is not None:
-                if collect:
-                    from opencode._opencode import _extract_text
-                    return OpencodeResponse(text=_extract_text(v2_result))
-                return v2_result
+            return _user_message(sent, text)
 
-        # Fall back to V1
-        parts: list[dict[str, Any]] = [{"type": "text", "text": text}]
-        body: dict[str, Any] = {"parts": parts}
-        if model:
-            body["model"] = model
-        if format:
-            body["format"] = format
+        deadline = time.monotonic() + poll_timeout
+        with closing(self._client.event_subscribe()) as stream:
+            sent = self._client.session_prompt(
+                self.id, text, files=files, agents=agents, skills=skills
+            )
+            watch = _PromptWatch(self.id, sent.id or "", collect=collect, quiet=quiet)
+            for line in stream.iter_lines():
+                event = watch.feed(line)
+                decision = _permission_reply(event, tool_executor)
+                if event is not None and decision is not None:
+                    self._client.session_permission_reply(self.id, event.properties["id"], decision)
+                if watch.done:
+                    break
+                if time.monotonic() > deadline:
+                    raise APITimeoutError(
+                        f"No reply from session {self.id} within {poll_timeout}s",
+                        request=stream.request,
+                    )
+            else:
+                raise OpencodeError(f"Event stream closed before session {self.id} finished")
 
-        result = self._client.session_send(self.id, body)
-
-        parts_list = (
-            result.parts if isinstance(result, V1SessionResponse) else result.get("parts", [])
-        )
-        info = result.info if isinstance(result, V1SessionResponse) else result.get("info", {})
-        structured = getattr(result, "structured", None) or info.get("structured")
-        text_parts: list[dict[str, Any]] = []
-        for p in parts_list:
-            ptype = p.get("type", "")
-            if ptype in ("text", "reasoning", "tool"):
-                text_parts.append({"type": ptype, "text": p.get("text", "")})
-        msg: dict[str, Any] = {
-            "id": info.get("id", ""),
-            "type": "assistant",
-            "content": text_parts,
-            "model": info.get("model"),
-            "time": info.get("time", {}),
-        }
-        if structured is not None:
-            msg["structured"] = structured
-        result_msg = cast(SessionMessage, msg)
+        reply = _build_reply(self._client.session_context(self.id), sent.id or "")
         if collect:
             from opencode._opencode import _extract_text
 
-            return OpencodeResponse(text=_extract_text(result_msg))
-        return result_msg
+            return OpencodeResponse(text=_extract_text(reply), events=list(watch.events))
+        return reply
 
     def ask(
         self,
         text: str,
         *,
         files: list[dict[str, Any]] | None = None,
-        model: dict[str, str] | None = None,
+        model: str | dict[str, str] | None = None,
         format: dict[str, Any] | None = None,
-        max_tool_rounds: int = 25,
         tool_executor: ToolExecutor | None = None,
         quiet: bool = False,
+        poll_timeout: float = 600.0,
         collect: bool = False,
     ) -> OpencodeResponse | SessionMessage:
-        if tool_executor is None:
-            tool_executor = ToolExecutor()
-        parts: list[dict[str, Any]] = [{"type": "text", "text": text}]
-        if files:
-            parts.extend(files)
+        """Like :meth:`prompt`, answering permission requests with ``tool_executor``
+        (default :class:`ToolExecutor`, which asks on the console before shell commands)."""
+        return self.prompt(
+            text,
+            files=files,
+            model=model,
+            format=format,
+            poll_timeout=poll_timeout,
+            collect=collect,
+            tool_executor=tool_executor or ToolExecutor(),
+            quiet=quiet,
+        )
 
-        for _round in range(max_tool_rounds):
-            body: dict[str, Any] = {"parts": parts}
-            if model:
-                body["model"] = model
-            if format:
-                body["format"] = format
+    def info(self) -> SessionResponse:
+        return self._client.session_get(self.id)
 
-            result = self._client.session_send(self.id, body)
-            if not isinstance(result, V1SessionResponse) and not isinstance(result, dict):
-                early_msg = cast(SessionMessage, result)
-                if collect:
-                    from opencode._opencode import _extract_text
-                    return OpencodeResponse(text=_extract_text(early_msg))
-                return early_msg
+    def messages(self, **params: Any) -> PageResponse:
+        return self._client.session_messages(self.id, **params)
 
-            parts_list = (
-                result.parts if isinstance(result, V1SessionResponse) else result.get("parts", [])
-            )
-            info = result.info if isinstance(result, V1SessionResponse) else result.get("info", {})
-
-            tool_uses = [p for p in parts_list if p.get("type") == "tool-use"]
-            if tool_uses:
-                self._auto_confirmed = True
-                results: list[dict[str, Any]] = []
-                for tu in tool_uses:
-                    tool_name = tu.get("tool", {}).get("name", "")
-                    tool_input = tu.get("tool", {}).get("input", {})
-                    tool_id = tu.get("toolUseID", "")
-                    if not quiet:
-                        print(f"\033[33m[Tool] {tool_name}\033[0m")
-                    output = tool_executor.execute(tool_name, tool_input)
-                    results.append(
-                        {
-                            "type": "tool-result",
-                            "toolUseID": tool_id,
-                            "tool": {"name": tool_name},
-                            "output": output,
-                        }
-                    )
-
-                parts = results
-                continue
-
-            # No tool-use parts — model may be planning or asking.
-            if not self._auto_confirmed:
-                self._auto_confirmed = True
-                parts = [
-                    {
-                        "type": "text",
-                        "text": "Exit plan mode and proceed. Use tools as needed.",
-                    }
-                ]
-                continue
-
-            # Final response (no tool calls, already confirmed)
-            text_parts: list[dict[str, Any]] = []
-            for p in parts_list:
-                ptype = p.get("type", "")
-                if ptype in ("text", "reasoning", "tool"):
-                    text_parts.append({"type": ptype, "text": p.get("text", "")})
-            msg: dict[str, Any] = {
-                "id": info.get("id", ""),
-                "type": "assistant",
-                "content": text_parts,
-                "model": info.get("model"),
-                "time": info.get("time", {}),
-            }
-            structured = getattr(result, "structured", None) or info.get("structured")
-            if structured is not None:
-                msg["structured"] = structured
-            result_msg = cast(SessionMessage, msg)
-            if collect:
-                from opencode._opencode import _extract_text
-                return OpencodeResponse(text=_extract_text(result_msg))
-            return result_msg
-
-        raise RuntimeError(f"Tool loop exceeded {max_tool_rounds} rounds")
-
-    def messages(self, **kwargs: Any) -> Any:
-        return self._client.v2_session_messages(self.id, **kwargs)
-
-    def context(self, **kwargs: Any) -> list[SessionMessage]:
-        ctx = self._client.v2_session_context(self.id, **kwargs)
-        messages = ctx.get("data", []) if isinstance(ctx, dict) else ctx
-        return cast("list[SessionMessage]", messages)
-
-    def delete_message(self, message_id: str, **kwargs: Any) -> Any:
-        return self._client.session_delete_message(self.id, message_id, **kwargs)
+    def context(self) -> list[SessionMessage]:
+        return cast("list[SessionMessage]", self._client.session_context(self.id))
 
     def compact(self) -> Any:
-        return self._client.v2_session_compact(self.id)
+        return self._client.session_compact(self.id)
 
     def abort(self) -> Any:
-        return self._client.session_abort(self.id)
+        return self._client.session_interrupt(self.id)
 
-    def fork(self, **kwargs: Any) -> Any:
-        return self._client.session_fork(self.id, **kwargs)
+    def fork(self, *, before: str | None = None) -> SessionResponse:
+        return self._client.session_fork(self.id, before=before)
 
     def diff(self) -> Any:
         return self._client.session_diff(self.id)
 
-    def todo(self) -> Any:
-        return self._client.session_todo(self.id)
+    def delete(self) -> None:
+        self._client.session_delete(self.id)

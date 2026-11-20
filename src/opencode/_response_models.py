@@ -156,485 +156,293 @@ class OpencodeBaseModel(BaseModel):
 
 
 # ---------------------------------------------------------------------------
-# Global / Health
+# opencode v2 API models — generated from the server's /openapi.json.
+# All fields are optional; unknown fields are kept (extra="allow").
 # ---------------------------------------------------------------------------
 
 
-class HealthResponse(OpencodeBaseModel):
-    ok: bool = True
+class PageResponse(OpencodeBaseModel):
+    """Paginated list: ``data`` items plus ``cursor`` (``previous``/``next``)."""
+
+    data: list[Any] = []
+    cursor: dict[str, Any] | None = None
+
+
+class ServerInfoResponse(OpencodeBaseModel):
+    """GET /api/info"""
+
     version: str | None = None
-    healthy: bool | None = None
+    pid: int | None = None
+    hostname: str | None = None
+    urls: list[Any] | None = None
+    paths: dict[str, Any] | None = None
+    capabilities: dict[str, Any] | None = None
 
 
-# ---------------------------------------------------------------------------
-# Config
-# ---------------------------------------------------------------------------
+class LocationResponse(OpencodeBaseModel):
+    """GET /api/location"""
 
-
-class ConfigResponse(OpencodeBaseModel):
-    """Response from GET /config and PATCH /config."""
-
-
-class ConfigProviderResponse(OpencodeBaseModel):
-    """Response from GET /config/providers."""
-
-
-# ---------------------------------------------------------------------------
-# Session (V1 + V2)
-# ---------------------------------------------------------------------------
+    directory: str | None = None
+    project: dict[str, Any] | None = None
 
 
 class SessionResponse(OpencodeBaseModel):
-    id: str = ""
+    """Session.Info"""
+
+    id: str | None = None
+    parentID: str | None = None
+    fork: dict[str, Any] | None = None
+    projectID: str | None = None
     agent: str | None = None
-    model: str | None = None
+    model: dict[str, Any] | None = None
+    cost: float | None = None
+    tokens: dict[str, Any] | None = None
+    outcome: str | None = None
+    time: dict[str, Any] | None = None
     title: str | None = None
-    created: float | None = None
-
-
-class V2SessionsResponse(OpencodeBaseModel):
-    """Response from GET /api/session."""
-
-    cursor: dict[str, Any] | None = None
-    items: list[dict[str, Any]] = []
-
-
-class V2SessionMessagesResponse(OpencodeBaseModel):
-    """Response from GET /api/session/:id/message."""
-
-    cursor: dict[str, Any] | None = None
-    items: list[dict[str, Any]] = []
-
-
-class V1SessionResponse(OpencodeBaseModel):
-    """Response from POST /session/:id/message (V1)."""
-
-    parts: list[dict[str, Any]] = []
-    info: dict[str, Any] = {}
-    structured: Any = None
-
-
-class MessageInfo(OpencodeBaseModel):
-    id: str = ""
-    model: dict[str, str] | None = None
-    time: dict[str, float] | None = None
-    structured: Any = None
-
-
-class MessagePart(OpencodeBaseModel):
-    type: str = ""
-    text: str | None = None
-
-
-# ---------------------------------------------------------------------------
-# V2 Model / Provider
-# ---------------------------------------------------------------------------
-
-
-class ModelV2Info(OpencodeBaseModel):
-    """Response from GET /api/model."""
-
-    id: str = ""
-    providerID: str | None = None
-    name: str | None = None
-    description: str | None = None
-
-
-class ProviderV2Info(OpencodeBaseModel):
-    """Response from GET /api/provider."""
-
-    id: str = ""
-    name: str | None = None
-    description: str | None = None
-
-
-# ---------------------------------------------------------------------------
-# File
-# ---------------------------------------------------------------------------
-
-
-class FileContentResponse(OpencodeBaseModel):
-    content: str = ""
-    uri: str | None = None
-    type: str | None = None
-    encoding: str | None = None
-    mimeType: str | None = None
-
-
-class FileNode(OpencodeBaseModel):
-    """Response item from GET /file."""
-
-    absolute: str = ""
-    ignored: bool = False
-    name: str = ""
-    path: str = ""
-    type: str = ""
-
-
-class FileStatus(OpencodeBaseModel):
-    """Response item from GET /file/status."""
-
-    path: str = ""
-    status: str = ""
-    added: int = 0
-    removed: int = 0
-
-
-# ---------------------------------------------------------------------------
-# Find
-# ---------------------------------------------------------------------------
-
-
-class FindMatch(OpencodeBaseModel):
-    """Response item from GET /find."""
-
-    path: dict[str, Any] | None = None
-    lines: dict[str, Any] | None = None
-    line_number: int = 0
-    absolute_offset: int = 0
-    submatches: list[dict[str, Any]] = []
-
-
-class Symbol(OpencodeBaseModel):
-    """Response item from GET /find/symbol."""
-
-    kind: int = 0
+    subpath: str | None = None
+    metadata: dict[str, Any] | None = None
+    permissions: list[Any] | None = None
+    revert: dict[str, Any] | None = None
     location: dict[str, Any] | None = None
-    name: str = ""
 
 
-# ---------------------------------------------------------------------------
-# VCS
-# ---------------------------------------------------------------------------
+class PromptResponse(OpencodeBaseModel):
+    """Session.Inbox.User — returned by POST /api/session/{id}/prompt"""
 
-
-class VcsInfo(OpencodeBaseModel):
-    """Response from GET /vcs."""
-
-    branch: str | None = None
-    default_branch: str | None = None
-
-
-class VcsFileStatus(OpencodeBaseModel):
-    """Response item from GET /vcs/status."""
-
-    file: str = ""
-    status: str = ""
-    additions: int = 0
-    deletions: int = 0
-
-
-class VcsFileDiff(OpencodeBaseModel):
-    """Response item from GET /vcs/diff."""
-
-    file: str = ""
-    status: str | None = None
-    additions: int = 0
-    deletions: int = 0
-    patch: str | None = None
-
-
-# ---------------------------------------------------------------------------
-# Auth
-# ---------------------------------------------------------------------------
-
-
-class AuthResponse(OpencodeBaseModel):
-    """Response from auth endpoints."""
-
-
-# ---------------------------------------------------------------------------
-# Provider
-# ---------------------------------------------------------------------------
-
-
-class ProviderResponse(OpencodeBaseModel):
-    """Response from GET /provider."""
-
-    all: list[dict[str, Any]] = []
-    default: dict[str, Any] = {}
-    connected: list[str] = []
-
-
-class ProviderAuthListResponse(OpencodeBaseModel):
-    """Response from GET /provider/auth."""
-
-
-# ---------------------------------------------------------------------------
-# MCP
-# ---------------------------------------------------------------------------
-
-
-class MCPStatusResponse(OpencodeBaseModel):
-    """Response from GET /mcp and GET /mcp/status."""
-
-
-# ---------------------------------------------------------------------------
-# Tool
-# ---------------------------------------------------------------------------
-
-
-class ToolList(OpencodeBaseModel):
-    """Response from GET /experimental/tool."""
-
-
-class ToolIDs(OpencodeBaseModel):
-    """Response from GET /experimental/tool/ids."""
-
-
-# ---------------------------------------------------------------------------
-# Permission
-# ---------------------------------------------------------------------------
-
-
-class PermissionRequestResponse(OpencodeBaseModel):
-    """Response item from GET /permission."""
-
-    id: str = ""
-    sessionID: str = ""
-    permission: str = ""
-    tool: dict[str, Any] | None = None
-    patterns: list[str] = []
-    always: list[str] = []
-    metadata: dict[str, Any] = {}
-
-
-# ---------------------------------------------------------------------------
-# Question
-# ---------------------------------------------------------------------------
-
-
-class QuestionRequestResponse(OpencodeBaseModel):
-    """Response item from GET /question."""
-
-    id: str = ""
-    sessionID: str = ""
-    questions: list[dict[str, Any]] = []
-    tool: dict[str, Any] | None = None
-
-
-# ---------------------------------------------------------------------------
-# PTY
-# ---------------------------------------------------------------------------
-
-
-class PtyResponse(OpencodeBaseModel):
-    """Response from PTY endpoints."""
-
-    id: str = ""
-    command: str = ""
-    args: list[str] = []
-    cwd: str = ""
-    pid: int = 0
-    status: str = ""
-    title: str = ""
-
-
-class PtyShell(OpencodeBaseModel):
-    """Response item from GET /pty/shells."""
-
-    path: str = ""
-    name: str = ""
-    acceptable: bool = False
-
-
-# ---------------------------------------------------------------------------
-# Path
-# ---------------------------------------------------------------------------
-
-
-class PathResponse(OpencodeBaseModel):
-    """Response from GET /path."""
-
-    config: str = ""
-    directory: str = ""
-    home: str = ""
-    state: str = ""
-    worktree: str = ""
-
-
-# ---------------------------------------------------------------------------
-# Command
-# ---------------------------------------------------------------------------
-
-
-class CommandResponse(OpencodeBaseModel):
-    """Response item from GET /command."""
-
-    name: str = ""
-    description: str = ""
-    template: str = ""
-    hints: list[str] = []
-    agent: str | None = None
-    model: str | None = None
-    source: str | None = None
-    subtask: bool | None = None
-
-
-# ---------------------------------------------------------------------------
-# Agent
-# ---------------------------------------------------------------------------
+    id: str | None = None
+    sessionID: str | None = None
+    time: dict[str, Any] | None = None
+    type: str | None = None
+    payload: dict[str, Any] | None = None
+    delivery: str | None = None
 
 
 class AgentResponse(OpencodeBaseModel):
-    """Response item from GET /agent."""
+    """Agent.Info"""
 
-    name: str = ""
-    mode: str = ""
-    options: dict[str, Any] = {}
-    permission: Any = []
-    description: str | None = None
-    color: str | None = None
-    hidden: bool | None = None
+    id: str | None = None
+    name: str | None = None
     model: dict[str, Any] | None = None
-    prompt: str | None = None
-    steps: float | None = None
-    temperature: float | None = None
-    topP: float | None = None
-    native: bool | None = None
-    variant: str | None = None
+    request: dict[str, Any] | None = None
+    system: str | None = None
+    description: str | None = None
+    mode: str | None = None
+    hidden: bool | None = None
+    color: str | None = None
+    steps: int | None = None
+    permissions: list[Any] | None = None
 
 
-# ---------------------------------------------------------------------------
-# LSP / Formatter
-# ---------------------------------------------------------------------------
+class ModelV2Info(OpencodeBaseModel):
+    """Model.Info"""
+
+    id: str | None = None
+    modelID: str | None = None
+    providerID: str | None = None
+    canonical: str | None = None
+    type: str | None = None
+    family: str | None = None
+    name: str | None = None
+    compatibility: dict[str, Any] | None = None
+    package: str | None = None
+    settings: dict[str, Any] | None = None
+    headers: dict[str, Any] | None = None
+    body: dict[str, Any] | None = None
+    capabilities: dict[str, Any] | None = None
+    variants: list[Any] | None = None
+    time: dict[str, Any] | None = None
+    cost: list[Any] | None = None
+    status: str | None = None
+    enabled: bool | None = None
+    limit: dict[str, Any] | None = None
 
 
-class LSPStatusResponse(OpencodeBaseModel):
-    """Response item from GET /lsp."""
+class ProviderV2Info(OpencodeBaseModel):
+    """Provider.Info"""
 
-    id: str = ""
-    name: str = ""
-    root: str = ""
-    status: str = ""
-
-
-class FormatterStatusResponse(OpencodeBaseModel):
-    """Response item from GET /formatter."""
-
-    name: str = ""
-    enabled: bool = False
-    extensions: list[str] = []
+    id: str | None = None
+    canonical: str | None = None
+    integrationID: str | None = None
+    name: str | None = None
+    activation: str | None = None
+    package: str | None = None
+    compatibility: dict[str, Any] | None = None
+    settings: dict[str, Any] | None = None
+    headers: dict[str, Any] | None = None
+    body: dict[str, Any] | None = None
 
 
-# ---------------------------------------------------------------------------
-# Project
-# ---------------------------------------------------------------------------
+class IntegrationResponse(OpencodeBaseModel):
+    """Integration.Info"""
+
+    id: str | None = None
+    name: str | None = None
+    metadata: dict[str, Any] | None = None
+    methods: list[Any] | None = None
+    connections: list[Any] | None = None
+
+
+class MCPServerResponse(OpencodeBaseModel):
+    """Mcp.Server"""
+
+    name: str | None = None
+    status: dict[str, Any] | None = None
+    title: str | None = None
+    integrationID: str | None = None
+
+
+class CredentialResponse(OpencodeBaseModel):
+    """Credential.Entry"""
+
+    id: str | None = None
+    integrationID: str | None = None
+    label: str | None = None
+    active: bool | None = None
+    value: dict[str, Any] | None = None
 
 
 class ProjectResponse(OpencodeBaseModel):
-    """Response from project endpoints."""
+    """Project"""
 
-    id: str = ""
-    name: str | None = None
-    directory: str | None = None
-    worktree: str = ""
-    sandboxes: list[str] = []
+    id: str | None = None
+    canonical: str | None = None
     vcs: str | None = None
-    time: dict[str, Any] | None = None
-    commands: dict[str, Any] | None = None
+    name: str | None = None
     icon: dict[str, Any] | None = None
+    commands: dict[str, Any] | None = None
+    time: dict[str, Any] | None = None
+    sandboxes: list[Any] | None = None
 
 
-# ---------------------------------------------------------------------------
-# Worktree
-# ---------------------------------------------------------------------------
+class PermissionRequestResponse(OpencodeBaseModel):
+    """Permission.Request"""
+
+    id: str | None = None
+    sessionID: str | None = None
+    action: str | None = None
+    resources: list[Any] | None = None
+    save: list[Any] | None = None
+    metadata: dict[str, Any] | None = None
+    source: dict[str, Any] | None = None
+    message: str | None = None
+
+
+class FormResponse(OpencodeBaseModel):
+    """Form.Info"""
+
+    id: str | None = None
+    sessionID: str | None = None
+    title: str | None = None
+    metadata: dict[str, Any] | None = None
+    fields: list[Any] | None = None
+
+
+class FileSystemEntry(OpencodeBaseModel):
+    """FileSystem.Entry"""
+
+    path: str | None = None
+    type: str | None = None
+
+
+class CommandResponse(OpencodeBaseModel):
+    """Command.Info"""
+
+    name: str | None = None
+    description: str | None = None
+
+
+class SkillResponse(OpencodeBaseModel):
+    """Skill.Info"""
+
+    id: str | None = None
+    name: str | None = None
+    description: str | None = None
+    autoinvoke: bool | None = None
+    path: str | None = None
+    content: str | None = None
+
+
+class PtyResponse(OpencodeBaseModel):
+    """Pty"""
+
+    id: str | None = None
+    title: str | None = None
+    command: str | None = None
+    args: list[Any] | None = None
+    cwd: str | None = None
+    status: str | None = None
+    pid: int | None = None
+    exitCode: int | None = None
+
+
+class ShellResponse(OpencodeBaseModel):
+    """Shell.Info"""
+
+    id: str | None = None
+    status: str | None = None
+    command: str | None = None
+    cwd: str | None = None
+    shell: str | None = None
+    file: str | None = None
+    pid: int | None = None
+    exit: float | None = None
+    signal: str | None = None
+    metadata: dict[str, Any] | None = None
+    time: dict[str, Any] | None = None
+
+
+class VcsInfo(OpencodeBaseModel):
+    """Vcs.Info"""
+
+    provider: str | None = None
+    branch: dict[str, Any] | None = None
+
+
+class VcsFileStatus(OpencodeBaseModel):
+    """Vcs.FileStatus"""
+
+    file: str | None = None
+    additions: int | None = None
+    deletions: int | None = None
+    status: str | None = None
+
+
+class VcsBranchList(OpencodeBaseModel):
+    """Vcs.BranchList"""
+
+    pass
+
+
+class FileDiffResponse(OpencodeBaseModel):
+    """FileDiff.Info"""
+
+    file: str | None = None
+    patch: str | None = None
+    additions: int | None = None
+    deletions: int | None = None
+    status: str | None = None
+    more: bool | None = None
 
 
 class WorktreeResponse(OpencodeBaseModel):
-    """Response from worktree endpoints."""
+    """Worktree.Directory"""
 
-    directory: str = ""
-    name: str = ""
-    branch: str | None = None
-
-
-# ---------------------------------------------------------------------------
-# Workspace
-# ---------------------------------------------------------------------------
+    directory: str | None = None
+    strategy: str | None = None
 
 
-class WorkspaceResponse(OpencodeBaseModel):
-    """Response from workspace endpoints."""
+class ConfigEntry(OpencodeBaseModel):
+    """Config.Entry"""
 
-    id: str = ""
-    name: str = ""
-    projectID: str = ""
-    type: str = ""
-    branch: dict[str, Any] | None = None
-    directory: dict[str, Any] | None = None
-    extra: dict[str, Any] | None = None
-    timeUsed: dict[str, Any] | None = None
+    type: str | None = None
+    path: str | None = None
+    info: dict[str, Any] | None = None
 
 
-# ---------------------------------------------------------------------------
-# Sync
-# ---------------------------------------------------------------------------
+class ConfigShellOption(OpencodeBaseModel):
+    """ConfigShell.Option"""
 
-
-class SyncStartResponse(OpencodeBaseModel):
-    """Response from POST /sync/start."""
-
-
-class SyncStealResponse(OpencodeBaseModel):
-    """Response from POST /sync/steal."""
-
-    sessionID: str | None = None
-
-
-class SyncReplayResponse(OpencodeBaseModel):
-    """Response from POST /sync/replay."""
-
-    sessionID: str | None = None
-
-
-# ---------------------------------------------------------------------------
-# TUI
-# ---------------------------------------------------------------------------
-
-
-class TUINextResponse(OpencodeBaseModel):
-    """Response from GET /tui/control/next."""
-
-    path: str = ""
-    body: Any = None
-
-
-# ---------------------------------------------------------------------------
-# Todo
-# ---------------------------------------------------------------------------
-
-
-class TodoResponse(OpencodeBaseModel):
-    """Response item from GET /session/:id/todo."""
-
-    content: str = ""
-    status: str = ""
-    priority: str = ""
-
-
-# ---------------------------------------------------------------------------
-# Snapshot file diff
-# ---------------------------------------------------------------------------
-
-
-class SnapshotFileDiffResponse(OpencodeBaseModel):
-    """Response item from GET /session/:id/diff."""
-
-    file: str | None = None
-    status: str | None = None
-    additions: int = 0
-    deletions: int = 0
-    patch: str | None = None
-
-
-# ---------------------------------------------------------------------------
-# Generic message response
-# ---------------------------------------------------------------------------
-
-
-class MessageResponse(OpencodeBaseModel):
-    """Response from session message endpoints."""
-
-    info: dict[str, Any] = {}
-    parts: list[dict[str, Any]] = []
+    path: str | None = None
+    name: str | None = None
+    acceptable: bool | None = None

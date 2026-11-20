@@ -1,106 +1,86 @@
-"""Compare upstream openapi.json with our Python SDK expectations.
+"""Check that every endpoint the SDK calls exists in an opencode OpenAPI spec.
 
-Fetches the spec from GitHub's dev branch and checks for changes
-that would require updating the Python SDK.
+Usage:
+    python scripts/check-upstream.py                 # spec of the local `opencode` binary
+    python scripts/check-upstream.py --spec FILE|URL # e.g. a saved /openapi.json
 
-Run periodically (or before release) to stay in sync with upstream.
+Without ``--spec`` an ``opencode serve`` is started and its ``/openapi.json``
+is checked. Exits non-zero when the SDK uses a path/method the spec lacks.
 """
 
 from __future__ import annotations
 
+import argparse
 import json
+import re
+import sys
 import urllib.request
-from typing import Any, cast
+from pathlib import Path
+from typing import Any
 
-UPSTREAM_URL = "https://raw.githubusercontent.com/anomalyco/opencode/dev/packages/sdk/openapi.json"
-
-
-def fetch_json(url: str) -> dict[str, Any]:
-    with urllib.request.urlopen(url, timeout=15) as resp:
-        data: dict[str, Any] = json.loads(resp.read().decode())
-        return data
+CLIENT = Path(__file__).resolve().parent.parent / "src" / "opencode" / "_client.py"
+CALL = re.compile(r'_request(?:_stream)?\(\s*"(GET|POST|PUT|PATCH|DELETE)",\s*f?"(/[^"]*)"')
 
 
-def get_inline_delivery_enum(spec: dict[str, Any]) -> list[str] | None:
-    """Extract the delivery enum from the v2 prompt endpoint."""
+def local_spec() -> dict[str, Any]:
+    from opencode import OpencodeClient, create_opencode_server
+
+    server = create_opencode_server()
+    client = OpencodeClient(base_url=server.url, password=server.password)
     try:
-        prompt = spec["paths"]["/api/session/{sessionID}/prompt"]["post"]
-        props = prompt["requestBody"]["content"]["application/json"]["schema"][
-            "properties"
-        ]
-        delivery = props["delivery"]
-        return cast(list[str] | None, delivery.get("enum"))
-    except Exception:
-        return None
+        spec: dict[str, Any] = client._client.get(
+            f"{server.url}/openapi.json", auth=client._auth
+        ).json()
+        return spec
+    finally:
+        client.close()
+        server.close()
 
 
-def main() -> None:
-    print("Fetching upstream openapi.json from GitHub dev branch...")
-    try:
-        upstream = fetch_json(UPSTREAM_URL)
-    except Exception as e:
-        print(f"FAILED to fetch upstream: {e}")
-        return
+def load_spec(source: str | None) -> dict[str, Any]:
+    if source is None:
+        return local_spec()
+    if source.startswith(("http://", "https://")):
+        with urllib.request.urlopen(source, timeout=15) as resp:
+            data: dict[str, Any] = json.loads(resp.read().decode())
+            return data
+    loaded: dict[str, Any] = json.loads(Path(source).read_text())
+    return loaded
 
-    info = upstream.get("info", {})
-    print(
-        f"Upstream info: title={info.get('title')}, version={info.get('version')}"
-    )
 
-    # Check 1: delivery enum
-    delivery = get_inline_delivery_enum(upstream)
-    our_delivery = "queue"  # default in _client.py and _async_client.py
+def normalize(path: str) -> str:
+    """``/api/session/{session_id}`` and ``/api/session/{sessionID}`` -> ``/api/session/{}``."""
+    path = re.sub(r"\{[^}]*\}", "{}", path)
+    return path.replace("/*", "/{}")
 
-    print()
-    changes_needed: list[str] = []
 
-    if delivery:
-        print(f"Delivery enum (upstream): {delivery}")
-        print(f'Delivery default (our SDK): "{our_delivery}"')
-        if "deferred" in delivery and our_delivery != "deferred":
-            changes_needed.append(
-                f"Delivery enum changed to {delivery}. "
-                "Update default in: _client.py:208, _async_client.py:208, test_live.py:98\n"
-                '  from `delivery: str = "queue"` to `delivery: str = "deferred"`\n'
-                '  and delivery="queue" to delivery="deferred" in test_live.py'
-            )
-        elif "queue" in delivery:
-            print("  => No change needed (still 'queue' compatible).")
-    else:
-        changes_needed.append(
-            "Delivery enum not found in spec — endpoint may have changed."
-        )
+def main() -> int:
+    parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
+    parser.add_argument("--spec", help="spec file path or URL (default: local opencode)")
+    args = parser.parse_args()
 
-    # Check 2: structured output format
-    schemas = upstream.get("components", {}).get("schemas", {})
-    has_structured = "OutputFormatJsonSchema" in schemas
-    if not has_structured:
-        # Check inline in V1 session/message endpoint
-        try:
-            v1 = upstream["paths"]["/session/{sessionID}/message"]["post"]
-            props = v1["requestBody"]["content"]["application/json"]["schema"][
-                "properties"
-            ]
-            has_structured = "format" in props
-        except Exception:
-            pass
-    print(
-        f"\nStructured output (format field): {'PRESENT' if has_structured else 'MISSING'}"
-    )
-    if not has_structured:
-        changes_needed.append(
-            "'format' field in V1 prompt endpoint missing — structured output may have changed."
-        )
+    spec = load_spec(args.spec)
+    info = spec.get("info", {})
+    print(f"Spec: {args.spec or 'local opencode serve'}")
+    print(f"  title={info.get('title')} version={info.get('version')}")
 
-    # Summary
-    print()
-    if changes_needed:
-        print("=== CHANGES NEEDED ===")
-        for i, c in enumerate(changes_needed, 1):
-            print(f"{i}. {c}")
-    else:
-        print("All clear — no SDK changes needed.")
+    available = {
+        (method.upper(), normalize(path))
+        for path, ops in spec.get("paths", {}).items()
+        for method in ops
+    }
+    used = sorted({(m, normalize(p)) for m, p in CALL.findall(CLIENT.read_text())})
+    missing = [(m, p) for m, p in used if (m, p) not in available]
+
+    print(f"  SDK calls {len(used)} endpoints; spec has {len(available)} operations")
+    if missing:
+        print("\n=== MISSING FROM SPEC (SDK update needed) ===")
+        for method, path in missing:
+            print(f"  {method} {path}")
+        return 1
+    print("All clear — every SDK endpoint exists in the spec.")
+    return 0
 
 
 if __name__ == "__main__":
-    main()
+    sys.exit(main())

@@ -36,11 +36,11 @@ else:
 print(f"\nBoth running: {s1.running and s2.running}")
 
 print("\nHealth check A:")
-c1 = OpencodeClient(base_url=s1.url)
+c1 = OpencodeClient(base_url=s1.url, password=s1.password)
 print(f"  {c1.health()}")
 
 print("Health check B:")
-c2 = OpencodeClient(base_url=s2.url)
+c2 = OpencodeClient(base_url=s2.url, password=s2.password)
 print(f"  {c2.health()}")
 
 c1.close()

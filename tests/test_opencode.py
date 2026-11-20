@@ -1,21 +1,121 @@
 from __future__ import annotations
 
-from typing import cast
-from unittest.mock import AsyncMock, MagicMock, patch
+import json
+from typing import Any, cast
+from unittest.mock import MagicMock, patch
 
 import httpx
 import pytest
 
-from opencode import OpencodeClient
-from opencode._models import AssistantMessage, SessionMessage
-from opencode._opencode import (
-    _extract_text,
-    _opencode_state,
-    _resolve_model,
-    opencode,
+from opencode import (
+    AsyncOpendcode,
+    AsyncOpendcodeClient,
+    AsyncSession,
+    Opencode,
+    OpencodeClient,
+    OpencodeError,
+    ToolExecutor,
+    parse_stream_event,
+    parse_typed_event,
 )
-from opencode._response_models import OpencodeResponse
-from opencode._session import Session
+from opencode._models import AssistantMessage, SessionMessage
+from opencode._opencode import _extract_text, _opencode_state, _resolve_model, opencode
+from opencode._response_models import AsyncStreamResult, OpencodeResponse, StreamResult
+from opencode._session import Session, _build_reply
+
+SID = "ses_1"
+PROMPT_ID = "msg_u"
+
+
+def _event(type_: str, sid: str = SID, **data: Any) -> str:
+    return "data: " + json.dumps({"id": "evt", "type": type_, "data": {"sessionID": sid, **data}})
+
+
+def _sse(*lines: str) -> str:
+    return "".join(f"{line}\n\n" for line in [": heartbeat", *lines])
+
+
+TURN = [
+    _event("session.inbox.enqueued", inboxID=PROMPT_ID),
+    _event("session.execution.started"),
+    _event("session.text.delta", sid="ses_other", delta="not mine"),
+    _event("session.inbox.delivered", inboxID=PROMPT_ID),
+    _event("session.reasoning.delta", delta="thinking"),
+    _event("session.text.delta", delta="Hello"),
+    _event("session.text.delta", delta=" world"),
+    _event("session.execution.succeeded"),
+]
+
+CONTEXT = [
+    {"id": "msg_old", "type": "user", "text": "earlier"},
+    {"id": "msg_a0", "type": "assistant", "content": [{"type": "text", "text": "old reply"}]},
+    {"id": PROMPT_ID, "type": "user", "text": "hi"},
+    {
+        "id": "msg_a1",
+        "type": "assistant",
+        "content": [
+            {"type": "reasoning", "text": "thinking"},
+            {"type": "text", "text": "Working on it"},
+            {"type": "tool", "id": "t1", "name": "shell", "state": {"status": "completed"}},
+        ],
+    },
+    {
+        "id": "msg_a2",
+        "type": "assistant",
+        "content": [{"type": "text", "text": "Done"}],
+        "finish": "stop",
+    },
+    {"id": "msg_idle", "type": "idle", "outcome": "succeeded"},
+]
+
+
+class FakeServer:
+    """Routes requests the way the opencode v2 server would for one prompt."""
+
+    def __init__(self, events: list[str], context: list[dict[str, Any]] | None = None):
+        self.events = events
+        self.context = CONTEXT if context is None else context
+        self.requests: list[httpx.Request] = []
+
+    def __call__(self, request: httpx.Request) -> httpx.Response:
+        self.requests.append(request)
+        path = request.url.path
+        if path == "/api/event":
+            return httpx.Response(
+                200, text=_sse(*self.events), headers={"content-type": "text/event-stream"}
+            )
+        if path.endswith("/prompt"):
+            return httpx.Response(200, json={"data": {"id": PROMPT_ID, "type": "user"}})
+        if path.endswith("/context"):
+            return httpx.Response(200, json={"data": self.context})
+        return httpx.Response(204)
+
+    def paths(self) -> list[str]:
+        return [f"{r.method} {r.url.path}" for r in self.requests]
+
+    def body(self, path_suffix: str) -> Any:
+        request = next(r for r in self.requests if r.url.path.endswith(path_suffix))
+        return json.loads(request.content)
+
+
+def _session(server: FakeServer) -> Session:
+    client = OpencodeClient(
+        base_url="http://test", httpx_client=httpx.Client(transport=httpx.MockTransport(server))
+    )
+    return Session(client, SID)
+
+
+def _async_session(server: FakeServer) -> AsyncSession:
+    client = AsyncOpendcodeClient(
+        base_url="http://test",
+        httpx_client=httpx.AsyncClient(transport=httpx.MockTransport(server)),
+    )
+    return AsyncSession(client, SID)
+
+
+# ---------------------------------------------------------------------------
+# helpers
+# ---------------------------------------------------------------------------
 
 
 def test_resolve_model_default() -> None:
@@ -25,136 +125,197 @@ def test_resolve_model_default() -> None:
 def test_resolve_model_provider_model() -> None:
     assert _resolve_model(model="opencode/big-pickle") == {
         "providerID": "opencode",
-        "modelID": "big-pickle",
-    }
-
-
-def test_resolve_model_from_config() -> None:
-    assert _resolve_model(config={"model": "foo/bar"}) == {
-        "providerID": "foo",
-        "modelID": "bar",
+        "id": "big-pickle",
     }
 
 
 def test_resolve_model_model_overrides_config() -> None:
-    assert _resolve_model(model="x/y", config={"model": "a/b"}) == {
-        "providerID": "x",
-        "modelID": "y",
-    }
+    assert _resolve_model(model="x/y", config={"model": "a/b"}) == {"providerID": "x", "id": "y"}
+    assert _resolve_model(config={"model": "a/b"}) == {"providerID": "a", "id": "b"}
 
 
-def test_opencode_keep_reuses_session() -> None:
-    _opencode_state.clear()
-
-    mock_ai = MagicMock()
-    mock_ai.start = MagicMock()
-    mock_ai.close = MagicMock()
-    mock_session = MagicMock()
-    mock_session.id = "ses_keep"
-    mock_session.prompt.return_value = {
-        "type": "assistant",
-        "content": [{"type": "text", "text": "answer1"}],
-    }
-    mock_ai.create_session.return_value = mock_session
-
-    with patch("opencode._opencode.Opencode", return_value=mock_ai):
-        r1 = opencode("hello", keep=True)
-        r2 = opencode("world", keep=True)
-
-    assert r1 == "answer1"
-    assert r2 == "answer1"
-    assert mock_ai.create_session.call_count == 1
-    assert mock_session.prompt.call_count == 2
-    assert mock_ai.close.call_count == 0
-
-    _opencode_state.clear()
-
-
-def test_opencode_keep_false_closes() -> None:
-    _opencode_state.clear()
-
-    mock_ai = MagicMock()
-    mock_ai.start = MagicMock()
-    mock_ai.close = MagicMock()
-    mock_session = MagicMock()
-    mock_session.id = "ses_close"
-    mock_session.prompt.return_value = {
-        "type": "assistant",
-        "content": [{"type": "text", "text": "answer"}],
-    }
-    mock_ai.create_session.return_value = mock_session
-
-    with patch("opencode._opencode.Opencode", return_value=mock_ai):
-        r = opencode("question")
-
-    assert r == "answer"
-    assert mock_ai.create_session.call_count == 1
-    assert mock_session.prompt.call_count == 1
-    mock_ai.close.assert_called_once()
-    assert not _opencode_state
-
-    _opencode_state.clear()
-
-
-def test_extract_text_structured() -> None:
+def test_extract_text_joins_text_parts_only() -> None:
     msg = cast(
         AssistantMessage,
         {
-            "id": "msg_1",
+            "id": "m",
             "type": "assistant",
-            "content": [],
-            "structured": {"name": "Alice", "age": 30},
+            "content": [
+                {"type": "reasoning", "text": "hmm"},
+                {"type": "text", "text": "a"},
+                {"type": "tool", "id": "t", "name": "shell"},
+                {"type": "text", "text": "b"},
+            ],
+            "time": {},
         },
     )
-    result = _extract_text(msg)
-    assert result == '{"name": "Alice", "age": 30}'
+    assert _extract_text(msg) == "a\nb"
 
 
-def test_extract_text_structured_fallback() -> None:
-    msg = cast(
-        AssistantMessage,
-        {
-            "id": "msg_2",
-            "type": "assistant",
-            "content": [{"type": "text", "text": "hello"}],
-        },
-    )
-    result = _extract_text(msg)
-    assert result == "hello"
+def test_build_reply_merges_assistant_messages_after_prompt() -> None:
+    reply = _build_reply(CONTEXT, PROMPT_ID)
+    assert reply["id"] == "msg_a2"
+    assert reply["type"] == "assistant"
+    assert _extract_text(reply) == "Working on it\nDone"
+    assert [p["type"] for p in reply["content"]] == ["reasoning", "text", "tool", "text"]
 
 
-def test_opencode_with_format() -> None:
-    _opencode_state.clear()
+def test_build_reply_without_assistant() -> None:
+    reply = _build_reply([{"id": PROMPT_ID, "type": "user", "text": "hi"}], PROMPT_ID)
+    assert reply["type"] == "assistant"
+    assert reply["content"] == []
 
-    schema = {
-        "type": "object",
-        "properties": {"name": {"type": "string"}},
-        "required": ["name"],
-    }
-    mock_ai = MagicMock()
-    mock_ai.start = MagicMock()
-    mock_ai.close = MagicMock()
-    mock_session = MagicMock()
-    mock_session.id = "ses_fmt"
-    mock_session.prompt.return_value = {
-        "id": "msg_1",
-        "type": "assistant",
-        "content": [],
-        "structured": {"name": "Alice"},
-    }
-    mock_ai.create_session.return_value = mock_session
 
-    with patch("opencode._opencode.Opencode", return_value=mock_ai):
-        r = opencode(
-            "get name", format={"type": "json_schema", "schema": schema}
+def test_parse_stream_event_v2_payload() -> None:
+    event = parse_stream_event(
+        json.dumps(
+            {
+                "id": "evt_1",
+                "type": "session.text.delta",
+                "location": {"directory": "/p"},
+                "data": {"sessionID": SID, "delta": "x"},
+            }
         )
+    )
+    assert event.type == "session.text.delta"
+    assert event.properties == {"sessionID": SID, "delta": "x"}
+    assert event.session_id == SID
+    assert event.location == {"directory": "/p"}
 
-    assert r == '{"name": "Alice"}'
-    mock_session.prompt.assert_called_once()
-    _, kwargs = mock_session.prompt.call_args
-    assert kwargs["format"] == {"type": "json_schema", "schema": schema}
 
-    _opencode_state.clear()
+def test_parse_typed_event_fills_defaults() -> None:
+    event = parse_typed_event(json.dumps({"type": "session.text.delta", "data": {"sessionID": SID}}))
+    assert event.properties["delta"] == ""
+
+
+def test_tool_executor_decide() -> None:
+    executor = ToolExecutor(
+        permissions={"edit": "deny", "shell": "ask"}, confirm=lambda action, req: False
+    )
+    assert executor.decide({"action": "edit"}) == "reject"
+    assert executor.decide({"action": "shell", "resources": ["ls"]}) == "reject"
+    assert executor.decide({"action": "read"}) == "once"
+    assert ToolExecutor(confirm=lambda a, r: True).decide({"action": "shell"}) == "once"
+
+
+# ---------------------------------------------------------------------------
+# Session.prompt (sync)
+# ---------------------------------------------------------------------------
+
+
+def test_session_prompt_returns_reply() -> None:
+    server = FakeServer(TURN)
+    result = _session(server).prompt("hi")
+    assert isinstance(result, dict)
+    assert result["type"] == "assistant"
+    assert _extract_text(result) == "Working on it\nDone"
+    assert server.paths() == [
+        "GET /api/event",
+        f"POST /api/session/{SID}/prompt",
+        f"GET /api/session/{SID}/context",
+    ]
+    assert server.body("/prompt") == {"text": "hi"}
+
+
+def test_session_prompt_collect() -> None:
+    result = _session(FakeServer(TURN)).prompt("hi", collect=True)
+    assert isinstance(result, OpencodeResponse)
+    assert result.text == "Working on it\nDone"
+    types = [e.type for e in result.events]
+    assert types[0] == "session.inbox.enqueued"
+    assert types[-1] == "session.execution.succeeded"
+    assert all(e.session_id == SID for e in result.events)
+
+
+def test_session_prompt_switches_model() -> None:
+    server = FakeServer(TURN)
+    _session(server).prompt("hi", model="anthropic/claude-x")
+    assert server.paths()[0] == f"POST /api/session/{SID}/model"
+    assert server.body("/model") == {"model": {"providerID": "anthropic", "id": "claude-x"}}
+
+
+def test_session_prompt_ignores_finish_before_delivery() -> None:
+    """A run that finishes before our prompt is delivered must not end the wait."""
+    events = [
+        _event("session.execution.succeeded"),
+        _event("session.inbox.delivered", inboxID=PROMPT_ID),
+        _event("session.execution.succeeded"),
+    ]
+    result = _session(FakeServer(events)).prompt("hi", collect=True)
+    assert isinstance(result, OpencodeResponse)
+    assert len(result.events) == 3
+
+
+def test_session_prompt_execution_failed_raises() -> None:
+    events = [
+        _event("session.inbox.delivered", inboxID=PROMPT_ID),
+        _event("session.execution.failed", error={"message": "provider exploded"}),
+    ]
+    with pytest.raises(OpencodeError, match="provider exploded"):
+        _session(FakeServer(events)).prompt("hi")
+
+
+def test_session_prompt_stream_closed_raises() -> None:
+    events = [_event("session.inbox.delivered", inboxID=PROMPT_ID)]
+    with pytest.raises(OpencodeError, match="closed"):
+        _session(FakeServer(events)).prompt("hi")
+
+
+def _permission_turn() -> list[str]:
+    return [
+        _event("session.inbox.delivered", inboxID=PROMPT_ID),
+        _event("permission.asked", id="per_1", action="shell", resources=["rm -rf /"]),
+        _event("session.execution.succeeded"),
+    ]
+
+
+def test_session_prompt_rejects_permission_without_executor() -> None:
+    server = FakeServer(_permission_turn())
+    _session(server).prompt("hi")
+    assert f"POST /api/session/{SID}/permission/per_1/reply" in server.paths()
+    assert server.body("/reply") == {"decision": "reject"}
+
+
+def test_session_ask_answers_permission_with_executor() -> None:
+    server = FakeServer(_permission_turn())
+    _session(server).ask("hi", tool_executor=ToolExecutor(confirm=lambda a, r: True), quiet=True)
+    assert server.body("/reply") == {"decision": "once"}
+
+
+def test_session_prompt_no_wait_returns_user_message() -> None:
+    server = FakeServer([])
+    result = _session(server).prompt("hi", wait=False)
+    assert result["type"] == "user"
+    assert result["id"] == PROMPT_ID
+    assert server.paths() == [f"POST /api/session/{SID}/prompt"]
+
+
+def test_session_prompt_format_not_supported() -> None:
+    with pytest.raises(OpencodeError, match="Structured output"):
+        _session(FakeServer(TURN)).prompt("hi", format={"type": "json_schema", "schema": {}})
+
+
+# ---------------------------------------------------------------------------
+# AsyncSession.prompt
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_async_session_prompt_returns_reply() -> None:
+    server = FakeServer(TURN)
+    result = await _async_session(server).prompt("hi")
+    assert isinstance(result, dict)
+    assert _extract_text(result) == "Working on it\nDone"
+    assert server.paths()[1] == f"POST /api/session/{SID}/prompt"
+
+
+@pytest.mark.asyncio
+async def test_async_session_prompt_collect_and_permission() -> None:
+    server = FakeServer(_permission_turn())
+    result = await _async_session(server).prompt("hi", collect=True)
+    assert isinstance(result, OpencodeResponse)
+    assert server.body("/reply") == {"decision": "reject"}
+    assert [e.type for e in result.events][-1] == "session.execution.succeeded"
 
 
 # ---------------------------------------------------------------------------
@@ -162,472 +323,125 @@ def test_opencode_with_format() -> None:
 # ---------------------------------------------------------------------------
 
 
-def _make_sse_response(events: list[str]) -> httpx.Response:
-    """Build an httpx.Response with SSE-formatted body for testing."""
-    return httpx.Response(200, text="".join(events))
-
-
-def test_ask_stream_filters_reasoning() -> None:
-    from opencode import Opencode
-
-    session = MagicMock()
-    session.id = "ses_1"
-
-    events = [
-        'data: {"type":"message.updated","properties":{"info":{"role":"user"}}}\n\n',
-        'data: {"type":"message.part.updated","properties":{"sessionID":"ses_1","part":{"id":"p_user","type":"text","text":"hi"}}}\n\n',
-        'data: {"type":"message.updated","properties":{"info":{"role":"assistant"}}}\n\n',
-        'data: {"type":"message.part.updated","properties":{"sessionID":"ses_1","part":{"id":"p_reason","type":"reasoning"}}}\n\n',
-        'data: {"type":"message.part.delta","properties":{"sessionID":"ses_1","partID":"p_reason","delta":"thinking step 1"}}\n\n',
-        'data: {"type":"message.part.delta","properties":{"sessionID":"ses_1","partID":"p_reason","delta":"thinking step 2"}}\n\n',
-        'data: {"type":"message.part.updated","properties":{"sessionID":"ses_1","part":{"id":"p_reason","type":"reasoning","text":"thinking step 1thinking step 2"}}}\n\n',
-        'data: {"type":"message.part.updated","properties":{"sessionID":"ses_1","part":{"id":"p_text","type":"text","text":""}}}\n\n',
-        'data: {"type":"message.part.delta","properties":{"sessionID":"ses_1","partID":"p_text","delta":"Hello"}}\n\n',
-        'data: {"type":"message.part.delta","properties":{"sessionID":"ses_1","partID":"p_text","delta":" world"}}\n\n',
-        'data: {"type":"message.part.updated","properties":{"sessionID":"ses_1","part":{"id":"p_text","type":"text","text":"Hello world"}}}\n\n',
-        'data: {"type":"session.status","properties":{"status":{"type":"idle"}}}\n\n',
-    ]
-    mock_client = MagicMock()
-    mock_client.event_subscribe.return_value = _make_sse_response(events)
-    mock_client.session_send.return_value = MagicMock()
-
+def _opencode_with(server: FakeServer) -> Opencode:
     ai = Opencode(model="opencode/big-pickle")
-    ai._client = mock_client
-    chunks = list(ai.ask_stream("hello", session=session))
-
-    assert chunks == ["Hello", " world"]
-
-
-def test_ask_stream_no_reasoning() -> None:
-    from opencode import Opencode
-
-    session = MagicMock()
-    session.id = "ses_1"
-
-    events = [
-        'data: {"type":"message.updated","properties":{"info":{"role":"user"}}}\n\n',
-        'data: {"type":"message.part.updated","properties":{"sessionID":"ses_1","part":{"id":"p_user","type":"text","text":"hi"}}}\n\n',
-        'data: {"type":"message.updated","properties":{"info":{"role":"assistant"}}}\n\n',
-        'data: {"type":"message.part.updated","properties":{"sessionID":"ses_1","part":{"id":"p_text","type":"text","text":""}}}\n\n',
-        'data: {"type":"message.part.delta","properties":{"sessionID":"ses_1","partID":"p_text","delta":"Hi"}}\n\n',
-        'data: {"type":"message.part.delta","properties":{"sessionID":"ses_1","partID":"p_text","delta":" there"}}\n\n',
-        'data: {"type":"session.status","properties":{"status":{"type":"idle"}}}\n\n',
-    ]
-    mock_client = MagicMock()
-    mock_client.event_subscribe.return_value = _make_sse_response(events)
-    mock_client.session_send.return_value = MagicMock()
-
-    ai = Opencode(model="opencode/big-pickle")
-    ai._client = mock_client
-    chunks = list(ai.ask_stream("hello", session=session))
-
-    assert chunks == ["Hi", " there"]
+    ai._client = OpencodeClient(
+        base_url="http://test", httpx_client=httpx.Client(transport=httpx.MockTransport(server))
+    )
+    ai._server = MagicMock()
+    return ai
 
 
-def test_ask_stream_only_reasoning_yields_nothing() -> None:
-    from opencode import Opencode
-
-    session = MagicMock()
-    session.id = "ses_1"
-
-    events = [
-        'data: {"type":"message.updated","properties":{"info":{"role":"user"}}}\n\n',
-        'data: {"type":"message.part.updated","properties":{"sessionID":"ses_1","part":{"id":"p_user","type":"text","text":"hi"}}}\n\n',
-        'data: {"type":"message.updated","properties":{"info":{"role":"assistant"}}}\n\n',
-        'data: {"type":"message.part.updated","properties":{"sessionID":"ses_1","part":{"id":"p_r","type":"reasoning"}}}\n\n',
-        'data: {"type":"message.part.delta","properties":{"sessionID":"ses_1","partID":"p_r","delta":"thinking"}}\n\n',
-        'data: {"type":"message.part.updated","properties":{"sessionID":"ses_1","part":{"id":"p_r","type":"reasoning","text":"thinking"}}}\n\n',
-        'data: {"type":"session.status","properties":{"status":{"type":"idle"}}}\n\n',
-    ]
-    mock_client = MagicMock()
-    mock_client.event_subscribe.return_value = _make_sse_response(events)
-    mock_client.session_send.return_value = MagicMock()
-
-    ai = Opencode(model="opencode/big-pickle")
-    ai._client = mock_client
-    chunks = list(ai.ask_stream("hello", session=session))
-
-    assert chunks == []
+def test_ask_stream_yields_text_deltas_only() -> None:
+    ai = _opencode_with(FakeServer(TURN))
+    session = Session(ai.client, SID)
+    assert list(ai.ask_stream("hi", session=session)) == ["Hello", " world"]
 
 
-def test_ask_stream_no_user_echo() -> None:
-    """User's text part should never be yielded."""
-    from opencode import Opencode
-
-    session = MagicMock()
-    session.id = "ses_1"
-
-    events = [
-        'data: {"type":"message.updated","properties":{"info":{"role":"user"}}}\n\n',
-        'data: {"type":"message.part.updated","properties":{"sessionID":"ses_1","part":{"id":"p_user","type":"text","text":"hello there"}}}\n\n',
-        'data: {"type":"message.updated","properties":{"info":{"role":"assistant"}}}\n\n',
-        'data: {"type":"message.part.updated","properties":{"sessionID":"ses_1","part":{"id":"p_t","type":"text","text":""}}}\n\n',
-        'data: {"type":"message.part.delta","properties":{"sessionID":"ses_1","partID":"p_t","delta":"Response"}}\n\n',
-        'data: {"type":"session.status","properties":{"status":{"type":"idle"}}}\n\n',
-    ]
-    mock_client = MagicMock()
-    mock_client.event_subscribe.return_value = _make_sse_response(events)
-    mock_client.session_send.return_value = MagicMock()
-
-    ai = Opencode(model="opencode/big-pickle")
-    ai._client = mock_client
-    chunks = list(ai.ask_stream("hello", session=session))
-
-    assert chunks == ["Response"]
-
-
-def test_ask_stream_other_session_skipped() -> None:
-    from opencode import Opencode
-
-    session = MagicMock()
-    session.id = "ses_1"
-
-    events = [
-        'data: {"type":"message.updated","properties":{"info":{"role":"user"}}}\n\n',
-        'data: {"type":"message.part.updated","properties":{"sessionID":"ses_other","part":{"id":"p_t","type":"text","text":"other"}}}\n\n',
-        'data: {"type":"message.updated","properties":{"info":{"role":"assistant"}}}\n\n',
-        'data: {"type":"message.part.updated","properties":{"sessionID":"ses_1","part":{"id":"p_t","type":"text","text":""}}}\n\n',
-        'data: {"type":"message.part.delta","properties":{"sessionID":"ses_1","partID":"p_t","delta":"Mine"}}\n\n',
-        'data: {"type":"session.status","properties":{"status":{"type":"idle"}}}\n\n',
-    ]
-    mock_client = MagicMock()
-    mock_client.event_subscribe.return_value = _make_sse_response(events)
-    mock_client.session_send.return_value = MagicMock()
-
-    ai = Opencode(model="opencode/big-pickle")
-    ai._client = mock_client
-    chunks = list(ai.ask_stream("hello", session=session))
-
-    assert chunks == ["Mine"]
-
-
-def test_ask_stream_no_deltas_falls_back_to_part_text() -> None:
-    """If no deltas arrive, yield from message.part.updated full text."""
-    from opencode import Opencode
-
-    session = MagicMock()
-    session.id = "ses_1"
-
-    events = [
-        'data: {"type":"message.updated","properties":{"info":{"role":"user"}}}\n\n',
-        'data: {"type":"message.part.updated","properties":{"sessionID":"ses_1","part":{"id":"p_u","type":"text","text":"hi"}}}\n\n',
-        'data: {"type":"message.updated","properties":{"info":{"role":"assistant"}}}\n\n',
-        'data: {"type":"message.part.updated","properties":{"sessionID":"ses_1","part":{"id":"p_t","type":"text","text":"Full response"}}}\n\n',
-        'data: {"type":"session.status","properties":{"status":{"type":"idle"}}}\n\n',
-    ]
-    mock_client = MagicMock()
-    mock_client.event_subscribe.return_value = _make_sse_response(events)
-    mock_client.session_send.return_value = MagicMock()
-
-    ai = Opencode(model="opencode/big-pickle")
-    ai._client = mock_client
-    chunks = list(ai.ask_stream("hello", session=session))
-
-    assert chunks == ["Full response"]
-
-
-def test_ask_stream_collect_true_returns_stream_result() -> None:
-    """ask_stream(collect=True) returns StreamResult with events + text."""
-    from opencode import Opencode
-    from opencode._response_models import StreamResult
-
-    session = MagicMock()
-    session.id = "ses_1"
-
-    events = [
-        'data: {"type":"message.updated","properties":{"info":{"role":"user"}}}\n\n',
-        'data: {"type":"message.part.updated","properties":{"sessionID":"ses_1","part":{"id":"p_u","type":"text","text":"hi"}}}\n\n',
-        'data: {"type":"message.updated","properties":{"info":{"role":"assistant"}}}\n\n',
-        'data: {"type":"message.part.updated","properties":{"sessionID":"ses_1","part":{"id":"p_t","type":"text","text":""}}}\n\n',
-        'data: {"type":"message.part.delta","properties":{"sessionID":"ses_1","partID":"p_t","delta":"Hello"}}\n\n',
-        'data: {"type":"message.part.delta","properties":{"sessionID":"ses_1","partID":"p_t","delta":" world"}}\n\n',
-        'data: {"type":"session.status","properties":{"status":{"type":"idle"}}}\n\n',
-    ]
-    mock_client = MagicMock()
-    mock_client.event_subscribe.return_value = _make_sse_response(events)
-    mock_client.session_send.return_value = MagicMock()
-
-    ai = Opencode(model="opencode/big-pickle")
-    ai._client = mock_client
-    stream = ai.ask_stream("hello", session=session, collect=True)
-
+def test_ask_stream_collect_returns_stream_result() -> None:
+    ai = _opencode_with(FakeServer(TURN))
+    stream = ai.ask_stream("hi", session=Session(ai.client, SID), collect=True)
     assert isinstance(stream, StreamResult)
-    chunks = list(stream)
+    assert list(stream) == ["Hello", " world"]
+    assert stream.text == "Hello world"
+    assert len(stream.events) == len(TURN) - 1  # other-session event excluded
+
+
+@pytest.mark.asyncio
+async def test_async_ask_stream_collect() -> None:
+    server = FakeServer(TURN)
+    ai = AsyncOpendcode(model="opencode/big-pickle")
+    ai._client = AsyncOpendcodeClient(
+        base_url="http://test",
+        httpx_client=httpx.AsyncClient(transport=httpx.MockTransport(server)),
+    )
+    ai._server = MagicMock()
+    stream = ai.ask_stream("hi", session=AsyncSession(ai.client, SID), collect=True)
+    assert isinstance(stream, AsyncStreamResult)
+    chunks = [chunk async for chunk in stream]
     assert chunks == ["Hello", " world"]
     assert stream.text == "Hello world"
-    # 7 SSE lines = 7 events collected
-    assert len(stream.events) == 7
-    # First event should be message.updated
-    assert stream.events[0].type == "message.updated"
 
 
-def test_ask_stream_collect_no_events_when_no_events_yielded() -> None:
-    """collect=True with no events still works."""
-    from opencode import Opencode
-    from opencode._response_models import StreamResult
-
-    session = MagicMock()
-    session.id = "ses_1"
-
-    # Only non-data lines (should be ignored)
-    response = httpx.Response(200, text="not data\nnothing here\n")
-    mock_client = MagicMock()
-    mock_client.event_subscribe.return_value = response
-    mock_client.session_send.return_value = MagicMock()
-
-    ai = Opencode(model="opencode/big-pickle")
-    ai._client = mock_client
-    stream = ai.ask_stream("hello", session=session, collect=True)
-
-    assert isinstance(stream, StreamResult)
-    chunks = list(stream)
-    assert chunks == []
-    assert stream.text == ""
-    assert stream.events == []
-
-
-def test_ask_stream_collect_false_backward_compat() -> None:
-    """ask_stream(collect=False) behaves like old ask_stream (no events)."""
-    from opencode import Opencode
-    from opencode._response_models import StreamResult
-
-    session = MagicMock()
-    session.id = "ses_1"
-
-    events = [
-        'data: {"type":"message.updated","properties":{"info":{"role":"user"}}}\n\n',
-        'data: {"type":"message.part.updated","properties":{"sessionID":"ses_1","part":{"id":"p_u","type":"text","text":"hi"}}}\n\n',
-        'data: {"type":"message.updated","properties":{"info":{"role":"assistant"}}}\n\n',
-        'data: {"type":"message.part.updated","properties":{"sessionID":"ses_1","part":{"id":"p_t","type":"text","text":""}}}\n\n',
-        'data: {"type":"message.part.delta","properties":{"sessionID":"ses_1","partID":"p_t","delta":"Hi"}}\n\n',
-        'data: {"type":"message.part.delta","properties":{"sessionID":"ses_1","partID":"p_t","delta":" there"}}\n\n',
-        'data: {"type":"session.status","properties":{"status":{"type":"idle"}}}\n\n',
-    ]
-    mock_client = MagicMock()
-    mock_client.event_subscribe.return_value = _make_sse_response(events)
-    mock_client.session_send.return_value = MagicMock()
-
-    ai = Opencode(model="opencode/big-pickle")
-    ai._client = mock_client
-    result = ai.ask_stream("hello", session=session, collect=False)
-
-    # Should be a raw generator/iterator, not StreamResult
-    assert not isinstance(result, StreamResult)
-    chunks = list(result)
-    assert chunks == ["Hi", " there"]
+@pytest.mark.asyncio
+async def test_async_ask_stream_plain() -> None:
+    ai = AsyncOpendcode()
+    ai._client = AsyncOpendcodeClient(
+        base_url="http://test",
+        httpx_client=httpx.AsyncClient(transport=httpx.MockTransport(FakeServer(TURN))),
+    )
+    ai._server = MagicMock()
+    result = ai.ask_stream("hi", session=AsyncSession(ai.client, SID))
+    assert not isinstance(result, AsyncStreamResult)
+    assert [chunk async for chunk in result] == ["Hello", " world"]
 
 
 # ---------------------------------------------------------------------------
-# collect parameter
+# Opencode.create_session / opencode()
 # ---------------------------------------------------------------------------
 
 
-def test_session_prompt_v2_collect_true() -> None:
-    """V2 path: collect=True returns OpencodeResponse with text."""
-    session = Session(MagicMock(), "ses_1")
-    v2_msg = cast(
-        SessionMessage,
-        {
-            "id": "msg_1",
-            "type": "assistant",
-            "content": [{"type": "text", "text": "Hello from V2"}],
-            "time": {},
-        },
+def test_create_session_uses_instance_model() -> None:
+    seen: list[httpx.Request] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.append(request)
+        return httpx.Response(200, json={"data": {"id": "ses_9"}})
+
+    ai = Opencode(model="anthropic/claude-x")
+    ai._client = OpencodeClient(
+        base_url="http://test", httpx_client=httpx.Client(transport=httpx.MockTransport(handler))
     )
-    with patch.object(session, "_prompt_v2", return_value=v2_msg):
-        result = session.prompt("hi", collect=True)
-    assert isinstance(result, OpencodeResponse)
-    assert result.text == "Hello from V2"
-    assert result.events == []
+    ai._server = MagicMock()
+    session = ai.create_session(agent="build")
+    assert session.id == "ses_9"
+    assert json.loads(seen[0].content) == {
+        "model": {"providerID": "anthropic", "id": "claude-x"},
+        "agent": "build",
+    }
 
 
-def test_session_prompt_v2_collect_false() -> None:
-    """V2 path: collect=False returns SessionMessage."""
-    session = Session(MagicMock(), "ses_1")
-    v2_msg = cast(
-        SessionMessage,
-        {
-            "id": "msg_1",
-            "type": "assistant",
-            "content": [{"type": "text", "text": "Hello"}],
-            "time": {},
-        },
-    )
-    with patch.object(session, "_prompt_v2", return_value=v2_msg):
-        result = session.prompt("hi", collect=False)
-    assert isinstance(result, dict)
-    assert result["type"] == "assistant"
+def _mock_ai(reply: SessionMessage | OpencodeResponse) -> tuple[MagicMock, MagicMock]:
+    mock_ai = MagicMock()
+    mock_session = MagicMock()
+    mock_session.prompt.return_value = reply
+    mock_ai.create_session.return_value = mock_session
+    return mock_ai, mock_session
 
 
-def test_session_prompt_v1_collect_true() -> None:
-    """V1 path (with model): collect=True returns OpencodeResponse."""
-    client = OpencodeClient(
-        base_url="http://localhost:9999",
-        httpx_client=httpx.Client(
-            transport=httpx.MockTransport(
-                lambda _: httpx.Response(
-                    200,
-                    json={
-                        "parts": [{"type": "text", "text": "Hello V1"}],
-                        "info": {"id": "msg_1", "time": {}},
-                    },
-                )
-            )
-        ),
-    )
-    session = Session(client, "ses_1")
-    result = session.prompt(
-        "hi", model={"providerID": "opencode", "modelID": "big-pickle"}, collect=True
-    )
-    assert isinstance(result, OpencodeResponse)
-    assert result.text == "Hello V1"
-    assert result.events == []
+_REPLY = cast(
+    SessionMessage,
+    {"id": "m", "type": "assistant", "content": [{"type": "text", "text": "answer"}], "time": {}},
+)
 
 
-def test_session_prompt_v1_collect_false() -> None:
-    """V1 path (with model): collect=False returns SessionMessage."""
-    client = OpencodeClient(
-        base_url="http://localhost:9999",
-        httpx_client=httpx.Client(
-            transport=httpx.MockTransport(
-                lambda _: httpx.Response(
-                    200,
-                    json={
-                        "parts": [{"type": "text", "text": "Hello V1"}],
-                        "info": {"id": "msg_1", "time": {}},
-                    },
-                )
-            )
-        ),
-    )
-    session = Session(client, "ses_1")
-    result = session.prompt(
-        "hi", model={"providerID": "opencode", "modelID": "big-pickle"}, collect=False
-    )
-    assert isinstance(result, dict)
-    assert result["type"] == "assistant"
+def test_opencode_keep_reuses_session() -> None:
+    _opencode_state.clear()
+    mock_ai, mock_session = _mock_ai(_REPLY)
+    with patch("opencode._opencode.Opencode", return_value=mock_ai):
+        assert opencode("hello", keep=True) == "answer"
+        assert opencode("world", keep=True) == "answer"
+    assert mock_ai.create_session.call_count == 1
+    assert mock_session.prompt.call_count == 2
+    assert mock_ai.close.call_count == 0
+    _opencode_state.clear()
+
+
+def test_opencode_keep_false_closes() -> None:
+    _opencode_state.clear()
+    mock_ai, mock_session = _mock_ai(_REPLY)
+    with patch("opencode._opencode.Opencode", return_value=mock_ai):
+        assert opencode("question") == "answer"
+    mock_ai.close.assert_called_once()
+    assert not _opencode_state
 
 
 def test_opencode_collect_true() -> None:
-    """opencode(collect=True) returns OpencodeResponse."""
     _opencode_state.clear()
-
-    mock_ai = MagicMock()
-    mock_ai.start = MagicMock()
-    mock_ai.close = MagicMock()
-    mock_session = MagicMock()
-    mock_session.id = "ses_collect"
-    mock_session.prompt.return_value = OpencodeResponse(text="answer from mock")
-    mock_ai.create_session.return_value = mock_session
-
+    mock_ai, _ = _mock_ai(OpencodeResponse(text="answer from mock"))
     with patch("opencode._opencode.Opencode", return_value=mock_ai):
         result = opencode("test", collect=True)
-
     assert isinstance(result, OpencodeResponse)
     assert result.text == "answer from mock"
     mock_ai.close.assert_called_once()
     assert not _opencode_state
-    _opencode_state.clear()
-
-
-def test_opencode_collect_false_default() -> None:
-    """opencode() without collect returns bare string (default)."""
-    _opencode_state.clear()
-
-    mock_ai = MagicMock()
-    mock_ai.start = MagicMock()
-    mock_ai.close = MagicMock()
-    mock_session = MagicMock()
-    mock_session.id = "ses_no_collect"
-    mock_session.prompt.return_value = {
-        "id": "msg_1",
-        "type": "assistant",
-        "content": [{"type": "text", "text": "bare string"}],
-        "time": {},
-    }
-    mock_ai.create_session.return_value = mock_session
-
-    with patch("opencode._opencode.Opencode", return_value=mock_ai):
-        result = opencode("test")
-
-    assert isinstance(result, str)
-    assert result == "bare string"
-    mock_ai.close.assert_called_once()
-    assert not _opencode_state
-    _opencode_state.clear()
-
-
-# ---------------------------------------------------------------------------
-# ask_stream collect — async
-# ---------------------------------------------------------------------------
-
-
-@pytest.mark.asyncio
-async def test_ask_stream_async_collect_true() -> None:
-    """Async ask_stream(collect=True) returns AsyncStreamResult with events."""
-    from opencode import AsyncOpendcode
-    from opencode._response_models import AsyncStreamResult
-
-    session = MagicMock()
-    session.id = "ses_a1"
-
-    events = [
-        'data: {"type":"message.updated","properties":{"info":{"role":"user"}}}\n\n',
-        'data: {"type":"message.part.updated","properties":{"sessionID":"ses_a1","part":{"id":"p_u","type":"text","text":"hi"}}}\n\n',
-        'data: {"type":"message.updated","properties":{"info":{"role":"assistant"}}}\n\n',
-        'data: {"type":"message.part.updated","properties":{"sessionID":"ses_a1","part":{"id":"p_t","type":"text","text":""}}}\n\n',
-        'data: {"type":"message.part.delta","properties":{"sessionID":"ses_a1","partID":"p_t","delta":"Hello"}}\n\n',
-        'data: {"type":"message.part.delta","properties":{"sessionID":"ses_a1","partID":"p_t","delta":" async"}}\n\n',
-        'data: {"type":"session.status","properties":{"status":{"type":"idle"}}}\n\n',
-    ]
-    mock_client = MagicMock()
-    mock_client.event_subscribe = AsyncMock(return_value=_make_sse_response(events))
-    mock_client.session_send = AsyncMock()
-    mock_client.session_create = AsyncMock()
-
-    ai = AsyncOpendcode(model="opencode/big-pickle")
-    ai._client = mock_client
-    ai._server = MagicMock()
-
-    stream = ai.ask_stream("hello", session=session, collect=True)
-    assert isinstance(stream, AsyncStreamResult)
-
-    chunks: list[str] = []
-    async for chunk in stream:
-        chunks.append(chunk)
-    assert chunks == ["Hello", " async"]
-    assert stream.text == "Hello async"
-    assert len(stream.events) == 7
-
-
-@pytest.mark.asyncio
-async def test_ask_stream_async_collect_false() -> None:
-    """Async ask_stream(collect=False) is not AsyncStreamResult."""
-    from opencode import AsyncOpendcode
-    from opencode._response_models import AsyncStreamResult
-
-    session = MagicMock()
-    session.id = "ses_a2"
-
-    events = [
-        'data: {"type":"message.updated","properties":{"info":{"role":"user"}}}\n\n',
-        'data: {"type":"message.updated","properties":{"info":{"role":"assistant"}}}\n\n',
-        'data: {"type":"message.part.updated","properties":{"sessionID":"ses_a2","part":{"id":"p_t","type":"text","text":""}}}\n\n',
-        'data: {"type":"message.part.delta","properties":{"sessionID":"ses_a2","partID":"p_t","delta":"Hi"}}\n\n',
-        'data: {"type":"session.status","properties":{"status":{"type":"idle"}}}\n\n',
-    ]
-    mock_client = MagicMock()
-    mock_client.event_subscribe = AsyncMock(return_value=_make_sse_response(events))
-    mock_client.session_send = AsyncMock()
-    mock_client.session_create = AsyncMock()
-
-    ai = AsyncOpendcode(model="opencode/big-pickle")
-    ai._client = mock_client
-    ai._server = MagicMock()
-
-    result = ai.ask_stream("hello", session=session, collect=False)
-    assert not isinstance(result, AsyncStreamResult)
-    chunks: list[str] = []
-    async for chunk in result:
-        chunks.append(chunk)
-    assert chunks == ["Hi"]
