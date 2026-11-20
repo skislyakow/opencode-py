@@ -34,18 +34,21 @@ from opencode._opencode import Opencode, opencode
 from opencode._response_models import (
     AsyncStreamResult,
     OpencodeResponse,
+    PageResponse,
     RawResponse,
+    SessionResponse,
     StreamResult,
 )
 from opencode._server import OpencodeServer, create_opencode_server
 from opencode._session import Session
 from opencode._stream_events import (
-    MessagePartDeltaProps,
-    MessagePartUpdatedProps,
-    MessageUpdatedProps,
+    EVENT_PROPS_REGISTRY,
+    SessionExecutionFailedProps,
     SessionStatusProps,
+    SessionTextDeltaProps,
     StreamEvent,
     parse_stream_event,
+    parse_typed_event,
 )
 from opencode._tools import ToolExecutor
 
@@ -90,10 +93,12 @@ __all__ = [
     "RateLimitError",
     "ServerStartupTimeoutError",
     "Session",
-    "MessagePartDeltaProps",
-    "MessagePartUpdatedProps",
-    "MessageUpdatedProps",
+    "EVENT_PROPS_REGISTRY",
+    "PageResponse",
+    "SessionExecutionFailedProps",
+    "SessionResponse",
     "SessionStatusProps",
+    "SessionTextDeltaProps",
     "StreamEvent",
     "ToolExecutor",
     "SessionInfo",
@@ -103,4 +108,5 @@ __all__ = [
     "create_opencode_server",
     "opencode",
     "parse_stream_event",
+    "parse_typed_event",
 ]

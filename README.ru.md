@@ -84,9 +84,9 @@ with Opencode() as ai:
         print(chunk, end="")
 ```
 
-`ask_stream()` подписывается на SSE (`/event`) эндпоинт сервера, отправляет
-запрос и выдаёт каждый текстовый фрагмент по мере поступления. Reasoning-блоки,
-эхо пользователя и дублирующийся текст автоматически фильтруются.
+`ask_stream()` подписывается на SSE эндпоинт сервера (`GET /api/event`),
+отправляет запрос и выдаёт каждый фрагмент `session.text.delta` по мере
+поступления. Reasoning не выдаётся.
 
 С `collect=True` `ask_stream()` возвращает `StreamResult` (или
 `AsyncStreamResult` для async), который сохраняет `.events` и `.text`:
@@ -101,10 +101,10 @@ with Opencode() as ai:
     print(stream.events)   # все сырые SSE события
 ```
 
-V2 `Session.prompt()` также использует `/event` SSE внутри — отправляет
-неблокирующий V2 запрос, подписывается на события и ждёт
-`session.next.step.ended` перед сборкой ответа. V1 блокирующий промпт
-используется как fallback, когда указаны `model` или `format`.
+`Session.prompt()` также использует поток событий внутри — отправляет
+`POST /api/session/{id}/prompt`, следит за `/api/event` до завершения запуска
+(`session.execution.succeeded` / `interrupted`, или выбрасывает исключение при
+`failed`), затем читает ответ из `GET /api/session/{id}/context`.
 
 #### Ответ с сырыми событиями (`collect`)
 
@@ -139,47 +139,31 @@ with Opencode() as ai:
 типизированных Pydantic-моделей через `parse_stream_event()`:
 
 ```python
-from opencode._stream_events import (
-    MessagePartDeltaProps,
-    MessagePartUpdatedProps,
-    MessageUpdatedProps,
-    SessionStatusProps,
-    parse_stream_event,
-)
+from opencode._stream_events import SessionTextDeltaProps, parse_stream_event
 
 with Opencode() as ai:
     session = ai.create_session()
-    response = ai.client.event_subscribe()  # сырой SSE поток
-    ai.client.session_send(session.id, {"parts": [{"type": "text", "text": "Hi"}]})
+    stream = ai.client.event_subscribe()        # сырой SSE поток (GET /api/event)
+    ai.client.session_prompt(session.id, "Hi")  # неблокирующий
 
-    for line in response.iter_lines():
-        if not line.startswith("data: "):
+    for line in stream.iter_lines():
+        if not line.startswith("data:"):
             continue
-        event = parse_stream_event(line[6:])
-        props = event.properties
-
-        # Пропускаем события других сессий
-        if props.get("sessionID") not in (None, session.id):
+        event = parse_stream_event(line[5:].strip())
+        if event.session_id != session.id:     # пропускаем другие сессии
             continue
-
-        if event.type == "message.part.delta":
-            p = MessagePartDeltaProps.model_construct(**props)
-            print(p.delta, end="")  # типизированный доступ к .delta, .partID и т.д.
-
-        elif event.type == "session.status":
-            p = SessionStatusProps.model_construct(**props)
-            if p.status.get("type") == "idle":
-                break
+        if event.type == "session.text.delta":
+            p = SessionTextDeltaProps.model_construct(**event.properties)
+            print(p.delta, end="")              # типизированный доступ к .delta
+        elif event.type in ("session.execution.succeeded", "session.execution.failed"):
+            break
+    stream.close()
 ```
 
-Работает для всех ~75 типов событий: `message.updated`, `session.status`,
-`session.next.text.delta`, `permission.asked`, `question.asked`, `file.edited`
-и других.
-
-> **Примечание**: Пример выше использует V1 блокирующий промпт (`session_send`).
-> V2 `Session.prompt()` внутри использует события `session.next.*`
-> (`session.next.prompted`, `session.next.step.ended`, и т.д.) через
-> тот же `/event` SSE эндпоинт.
+Модели есть для всех ~100 типов событий v2 (сгенерированы из `/openapi.json`
+сервера): `session.text.delta`, `session.tool.called`,
+`session.execution.succeeded`, `permission.asked`, `form.created`, ...
+`StreamEvent.properties` содержит объект `data` события.
 
 Используйте `parse_typed_event()` для автоматической валидации. Полный пример
 в [`live_stream_events.py`](#интерактивный-диалог).
@@ -195,9 +179,10 @@ with Opencode() as ai:
     print(f"AI: {msg2}")
 ```
 
-`Session.prompt()` использует V2 неблокирующий промпт + SSE подписку для
-более быстрых ответов. Падает на V1 блокирующий промпт когда указаны
-`model` или `format` (например structured output).
+Модель сессии фиксируется при её создании (`Opencode(model=...)` или
+`create_session(model=...)`); `session.prompt(text, model=...)` сначала
+переключает её. `wait=False` только ставит промпт в очередь и возвращает
+сообщение пользователя.
 
 ### Методы Session
 
@@ -213,17 +198,18 @@ with Opencode() as ai:
     msgs = session.messages()      # пагинированный список
 
     # Управление
-    session.abort()                # прервать генерацию
-    session.delete_message("msg_xxx")  # перманентно удалить сообщение
+    session.abort()                # прервать текущее выполнение
     session.compact()              # сжать историю
     session.fork()                 # форкнуть в новую сессию
+    session.delete()               # удалить сессию
 
     # Инспекция
+    session.info()                 # SessionResponse (модель, стоимость, токены, ...)
     session.diff()                 # файловые изменения от AI
-    session.todo()                 # оставшиеся задачи
 ```
 
-Удаление сообщения перманентно — сообщение и его части удаляются без отката файловых изменений. Чтобы отменить изменения, сделанные сообщением, используйте `session.revert()` (или `session.fork()` для ответвления).
+Откат доступен через клиент: `session_revert_stage()`,
+`session_revert_commit()`, `session_revert_clear()`.
 
 ### Multi-turn (keep mode)
 
@@ -236,70 +222,86 @@ r1 = opencode("Меня зовут Вася", keep=True)
 r2 = opencode("Какое имя я назвал?", keep=True)  # помнит диалог
 r3 = opencode("Хватит", keep=False)               # закрывает сервер
 
-# Также принимает: model, format, port, directory, config, agent
+# Также принимает: model, port, directory, config, agent
 ```
 
-### Auto-tools (агент с инструментами)
+### Инструменты и разрешения
+
+Инструменты (`shell`, `write`, `edit`, `read`, ...) выполняются **на сервере
+opencode**. Когда правила разрешений сервера говорят `ask`, он отправляет
+`permission.asked`; `Session.prompt()` отвечает на него с помощью переданного
+`tool_executor`, а если его нет — отклоняет. Отклонённое разрешение завершает
+запуск.
 
 ```python
 r = opencode("Создай файл hello.txt", auto_tools=True)
 ```
 
-Инструменты: `bash`, `write`, `edit`, `read`, `glob`, `grep`.
-
-По умолчанию `bash` спрашивает разрешение в консоли, остальные выполняются без вопроса.
-
-Кастомные пермишены через `Session.ask()`:
+`auto_tools=True` (и `Session.ask()`) используют `ToolExecutor` по умолчанию,
+который спрашивает в консоли перед `shell`/`bash` и разрешает всё остальное.
 
 ```python
 from opencode import Opencode, ToolExecutor
 
 with Opencode() as ai:
-    session = ai.create_session()
+    session = ai.create_session(
+        # опционально: сервер спрашивает перед каждой shell-командой
+        permissions=[{"action": "shell", "resource": "*", "effect": "ask"}],
+    )
     msg = session.ask(
-        "Напиши test.py с кодом print('hello')",
-        tool_executor=ToolExecutor(
-            permissions={"write": "allow"},
-            workdir="/path/to/sandbox",       # ограничить файловые операции
-        ),
-        max_tool_rounds=25,                     # лимит безопасности
+        "Напиши test.py с кодом print('hello') и запусти его",
+        tool_executor=ToolExecutor(permissions={"shell": "allow"}),
         quiet=True,                             # скрыть логи инструментов
     )
 ```
-
-Первый ответ AI в `ask()` входит в plan mode — SDK автоматически подтверждает
-`"Exit plan mode and proceed"`, чтобы модель сразу выполняла инструменты.
 
 ### Низкоуровневый клиент (любой endpoint)
 
 ```python
 with Opencode() as ai:
-    content = ai.client.file_read("src/main.py")
-    diff = ai.client.vcs_diff("HEAD~3")
-    config = ai.client.config_get()
-    session = ai.client.session_create()
-    ai.client.v2_session_prompt(session.id, {"text": "Hello"})
+    content = ai.client.fs_read("src/main.py")
+    diff = ai.client.vcs_diff()
+    models = ai.client.model_list()
+    session = ai.client.session_create(model="opencode/big-pickle")
+    ai.client.session_prompt(session.id, "Hello")   # неблокирующий
+    ai.client.session_wait(session.id)              # ждать до простоя
+    messages = ai.client.session_context(session.id)
 ```
 
-Все методы возвращают типизированные Pydantic модели — IDE автодополнение,
-`.model_dump()`, `.model_dump_json()`.
+Все методы клиента работают с v2 API opencode (`/api/*`) и возвращают
+типизированные Pydantic модели — IDE автодополнение, `.model_dump()`,
+`.model_dump_json()`. Обёртка `{"data": ...}` разворачивается; пагинированные
+списки (`session_list()`, `session_messages()`) возвращают `PageResponse` с
+`.data` и `.cursor`. `directory` клиента передаётся как `location[directory]`.
 
 #### Подключение к существующему серверу
 
-Без запуска подпроцесса — напрямую к работающему `opencode serve`:
+Без запуска подпроцесса — напрямую к работающему `opencode serve`. Сервер v2
+требует HTTP Basic auth (пользователь `opencode`); передайте пароль сервера или
+задайте `OPENCODE_SERVER_PASSWORD`:
 
 ```python
 from opencode import OpencodeClient
 
-client = OpencodeClient(base_url="http://127.0.0.1:4096", directory=".")
-health = client.health()
+client = OpencodeClient(base_url="http://127.0.0.1:4096", password="...", directory=".")
+info = client.health()   # GET /api/info -> ServerInfoResponse
 ```
 
 ```python
 from opencode import AsyncOpendcodeClient
 
-async with AsyncOpendcodeClient(base_url="http://127.0.0.1:4096") as client:
-    health = await client.health()
+async with AsyncOpendcodeClient(base_url="http://127.0.0.1:4096", password="...") as client:
+    info = await client.health()
+```
+
+`create_opencode_server()` генерирует случайный пароль и предоставляет его как
+`server.password`:
+
+```python
+from opencode import OpencodeClient, create_opencode_server
+
+server = create_opencode_server()
+client = OpencodeClient(base_url=server.url, password=server.password)
 ```
 
 #### Клонирование клиента
@@ -324,7 +326,7 @@ with client.with_raw_response:
 raw.status_code              # 200
 raw.headers                  # httpx.Headers
 raw.content                  # bytes
-raw.parsed                   # HealthResponse (типизированная модель)
+raw.parsed                   # ServerInfoResponse (типизированная модель)
 raw.response                 # httpx.Response (полный)
 ```
 
@@ -359,7 +361,7 @@ except InternalServerError:
 | `APIResponseValidationError` | — | Ответ не соответствует схеме |
 | `APIStatusError` | 4xx/5xx | Базовый для HTTP ошибок |
 | `BadRequestError` | 400 | Некорректный запрос |
-| `AuthenticationError` | 401 | Неверный или отсутствующий API ключ |
+| `AuthenticationError` | 401 | Отсутствующий или неверный пароль сервера |
 | `PermissionDeniedError` | 403 | Доступ запрещён |
 | `NotFoundError` | 404 | Ресурс не найден |
 | `ConflictError` | 409 | Конфликт ресурсов |
@@ -374,29 +376,8 @@ except InternalServerError:
 
 ### Structured output
 
-```python
-with Opencode(model="anthropic/claude-sonnet-4") as ai:
-    result = ai.ask(
-        "Сгенерируй профиль пользователя",
-        format={
-            "type": "json_schema",
-            "schema": {
-                "type": "object",
-                "properties": {
-                    "name": {"type": "string"},
-                    "age": {"type": "integer"},
-                },
-                "required": ["name", "age"],
-            },
-        },
-    )
-    # result — JSON строка, соответствующая схеме
-```
-
-Работает с `opencode()`, `async_opencode()`, `Session.prompt()` и `Session.ask()`.
-
-Требует модель с поддержкой `tool_choice="required"` (Claude, GPT-4).
-Бесплатная модель `opencode/big-pickle` (DeepSeek) НЕ поддерживает.
+Не поддерживается v2 API opencode — передача `format=` выбрасывает
+`OpencodeError`.
 
 ### Отладка
 
@@ -422,6 +403,8 @@ python web/server.py
 
 Встроенный HTTP-сервер + прокси к `opencode serve` — никаких зависимостей кроме Python.
 
+> **Примечание**: web UI ещё не портирован на v2 API opencode.
+
 ### Интерактивный диалог
 
 ```bash
@@ -430,7 +413,8 @@ python live_async.py      # асинхронный многошаговый ди
 python live_streaming.py  # стриминг диалог (переиспользование сессии)
 python live_raw.py        # демо with_raw_response (7 сценариев)
 python live_stream_events.py "Ваш запрос"  # инспекция SSE событий
-python demo.py            # полное тестирование API (38 эндпоинтов)
+python demo.py            # краткий обзор v2 API
+python test_live.py       # живая проверка 36 эндпоинтов без LLM
 ```
 
 Все скрипты чистят сервер при выходе через `atexit`.
@@ -440,26 +424,19 @@ python demo.py            # полное тестирование API (38 энд
 ```python
 from opencode import ToolExecutor
 
-# Пермишены по умолчанию:
-#   bash  → "ask"   (спрашивать в консоли)
-#   write → "allow"
-#   edit  → "allow"
-#   read  → "allow"
-#   glob  → "allow"
-#   grep  → "allow"
-
+# Ключи — действия разрешений, о которых спрашивает сервер.
+# По умолчанию: shell/bash -> "ask" (вопрос в консоли), всё остальное -> "allow".
 executor = ToolExecutor(
     permissions={
-        "bash": "allow",       # всегда разрешать
-        "write": "deny",        # всегда запрещать
-        "grep": "ask",          # спрашивать каждый раз
+        "shell": "allow",     # всегда разрешать
+        "edit": "deny",       # всегда отклонять
+        "read": "ask",        # вызвать confirm()
     },
-    workdir="/path/to/sandbox",   # ограничить файловые операции
-    confirm=lambda name, inp: name != "bash",  # кастомная функция
+    confirm=lambda action, request: "rm" not in " ".join(request["resources"]),
 )
 
-# Использование с Session.ask():
 session.ask("Create a project", tool_executor=executor)
+executor.decide({"action": "edit"})   # -> "reject"
 ```
 
 ### Управление бинарником
@@ -509,8 +486,7 @@ server.close()  # убивает подпроцесс
 | `model` | `None` | Имя модели, например `"opencode/big-pickle"` или `"provider/model"` |
 | `hostname` | `"127.0.0.1"` | Адрес для привязки сервера |
 | `port` | `None` (авто) | Порт сервера; `None` выбирает первый свободный |
-| `directory` | `None` | Рабочая директория для всех API вызовов |
-| `workspace` | `None` | Директория workspace для сессии |
+| `directory` | `None` | Рабочая директория (`location` сессии и `location[directory]` во всех API вызовах) |
 | `server_timeout` | `30.0` | Секунд ожидания запуска сервера |
 | `client_timeout` | `300.0` | Секунд до таймаута HTTP запроса |
 | `config` | `None` | Словарь конфигурации сервера |
@@ -538,7 +514,8 @@ asyncio.run(main())
 
 ```python
 async with AsyncOpendcode() as ai:
-    async for chunk in ai.ask_stream("Write a poem"):
+    session = await ai.create_session()   # async ask_stream требует сессию
+    async for chunk in ai.ask_stream("Write a poem", session=session):
         print(chunk, end="")
 ```
 
@@ -546,7 +523,8 @@ async with AsyncOpendcode() as ai:
 
 ```python
 async with AsyncOpendcode() as ai:
-    stream = ai.ask_stream("Write a poem", collect=True)
+    session = await ai.create_session()
+    stream = ai.ask_stream("Write a poem", session=session, collect=True)
     async for chunk in stream:
         print(chunk, end="")
     print(stream.events)  # сырые SSE события
@@ -581,7 +559,7 @@ result = await async_opencode("Hello", keep=True)
 result2 = await async_opencode("Still there?", keep=True)
 result3 = await async_opencode("Bye")
 
-# Также принимает: model, format, port, directory, config, agent, auto_tools
+# Также принимает: model, port, directory, config, agent, auto_tools
 ```
 
 ## Ключевые типы
@@ -617,8 +595,9 @@ stream = ai.ask_stream("Hello", collect=True)
 ### Pydantic response модели
 
 ```python
-from opencode._response_models import HealthResponse, SessionResponse, FileContentResponse
+from opencode._response_models import ServerInfoResponse, SessionResponse, PageResponse
 
+# Сгенерированы из /openapi.json сервера; все поля опциональны, лишние сохраняются.
 # Это классы BaseModel с методами:
 #   .model_dump() -> dict
 #   .model_dump_json() -> str

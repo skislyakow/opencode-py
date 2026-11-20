@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import os
 import re
+import secrets
 import socket
 import subprocess
 import time
@@ -12,12 +13,16 @@ from opencode._binary import ensure_opencode
 from opencode._errors import ServerStartupTimeoutError
 from opencode._process import stop
 
+SERVER_USERNAME = "opencode"
+
 
 class OpencodeServer:
-    def __init__(self, proc: subprocess.Popen[bytes], url: str, binary: str):
+    def __init__(self, proc: subprocess.Popen[bytes], url: str, binary: str, password: str):
         self._proc = proc
         self.url = url
         self.binary = binary
+        self.username = SERVER_USERNAME
+        self.password = password
 
     def close(self) -> None:
         stop(self._proc)
@@ -44,12 +49,23 @@ def create_opencode_server(
     timeout: float = 30.0,
     config: dict[str, Any] | None = None,
     opencode_binary: str | None = None,
+    password: str | None = None,
 ) -> OpencodeServer:
+    """Start ``opencode serve`` and wait until it is listening.
+
+    The v2 server requires HTTP Basic auth (user ``opencode``) on ``/api/*``.
+    A random password is generated unless ``password`` is given; it is passed
+    to the server via ``OPENCODE_SERVER_PASSWORD`` and exposed as
+    :attr:`OpencodeServer.password`.
+    """
     binary = opencode_binary or ensure_opencode()
     port = port if port is not None else _find_free_port(hostname)
+    password = password or secrets.token_urlsafe(32)
 
     args = [binary, "serve", f"--hostname={hostname}", f"--port={port}"]
     env = os.environ.copy()
+    env.pop("OPENCODE_PASSWORD", None)
+    env["OPENCODE_SERVER_PASSWORD"] = password
     if config:
         env["OPENCODE_CONFIG_CONTENT"] = json.dumps(config)
 
@@ -101,4 +117,4 @@ def create_opencode_server(
             f"\nstderr: {stderr_output}",
         )
 
-    return OpencodeServer(proc, url, binary)
+    return OpencodeServer(proc, url, binary, password)

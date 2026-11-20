@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 import random
 import time
 from typing import Any, TypeVar, cast, get_args, get_origin
@@ -23,38 +24,30 @@ from opencode._logs import logger
 from opencode._response_models import (
     AgentResponse,
     CommandResponse,
-    ConfigProviderResponse,
-    ConfigResponse,
-    FileContentResponse,
-    FileNode,
-    FileStatus,
-    FindMatch,
-    FormatterStatusResponse,
-    HealthResponse,
-    LSPStatusResponse,
-    MCPStatusResponse,
+    ConfigEntry,
+    ConfigShellOption,
+    CredentialResponse,
+    FileDiffResponse,
+    FileSystemEntry,
+    FormResponse,
+    IntegrationResponse,
+    LocationResponse,
+    MCPServerResponse,
     ModelV2Info,
-    PathResponse,
+    PageResponse,
     PermissionRequestResponse,
     ProjectResponse,
-    ProviderAuthListResponse,
-    ProviderResponse,
+    PromptResponse,
     ProviderV2Info,
     PtyResponse,
-    PtyShell,
-    QuestionRequestResponse,
     RawResponse,
+    ServerInfoResponse,
     SessionResponse,
-    SnapshotFileDiffResponse,
-    Symbol,
-    TodoResponse,
-    ToolIDs,
-    ToolList,
-    V1SessionResponse,
-    VcsFileDiff,
+    ShellResponse,
+    SkillResponse,
+    VcsBranchList,
     VcsFileStatus,
     VcsInfo,
-    WorkspaceResponse,
     WorktreeResponse,
 )
 from opencode._types import NOT_GIVEN, NotGiven, is_given
@@ -65,6 +58,39 @@ DEFAULT_MAX_RETRIES = 2
 INITIAL_RETRY_DELAY = 0.5
 MAX_RETRY_DELAY = 8.0
 RETRYABLE_STATUS_CODES = {408, 409, 429}
+DEFAULT_USERNAME = "opencode"
+PASSWORD_ENV = "OPENCODE_SERVER_PASSWORD"
+# Envelope keys wrapped around most v2 responses: {"data": ..., "location": {...}}
+_ENVELOPE_KEYS = {"data", "location"}
+
+
+def _compact(**kwargs: Any) -> dict[str, Any]:
+    """Drop ``None`` values so optional fields are omitted from the request."""
+    return {k: v for k, v in kwargs.items() if v is not None}
+
+
+def model_ref(model: str | dict[str, str] | None) -> dict[str, str] | None:
+    """Normalize a model reference to the v2 ``Model.Ref`` shape.
+
+    Accepts ``"provider/model"``, a bare model id (``opencode`` provider), or a
+    dict with ``providerID`` and ``id`` (legacy ``modelID`` is also accepted).
+    """
+    if model is None:
+        return None
+    if isinstance(model, str):
+        provider, _, model_id = model.partition("/")
+        return (
+            {"providerID": provider, "id": model_id}
+            if model_id
+            else {
+                "providerID": "opencode",
+                "id": provider,
+            }
+        )
+    ref = dict(model)
+    if "id" not in ref and "modelID" in ref:
+        ref["id"] = ref.pop("modelID")
+    return ref
 
 
 class _RawResponseContextManager:
@@ -90,14 +116,19 @@ class OpencodeClient:
         *,
         base_url: str = "http://127.0.0.1:4096",
         directory: str | None = None,
-        workspace: str | None = None,
+        password: str | None = None,
+        username: str = DEFAULT_USERNAME,
         timeout: float = 300.0,
         max_retries: int = DEFAULT_MAX_RETRIES,
         httpx_client: httpx.Client | None = None,
     ):
+        """``password`` defaults to ``$OPENCODE_SERVER_PASSWORD``; when set, requests
+        use HTTP Basic auth as required by the opencode v2 server."""
         self.base_url = base_url.rstrip("/")
         self.directory = directory
-        self.workspace = workspace
+        self.username = username
+        self.password = password if password is not None else os.environ.get(PASSWORD_ENV)
+        self._auth = httpx.BasicAuth(username, self.password) if self.password else None
         self._timeout = timeout
         self._max_retries = max_retries
         self._client = httpx_client or httpx.Client(timeout=httpx.Timeout(timeout))
@@ -115,10 +146,8 @@ class OpencodeClient:
         params: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         params = dict(params or {})
-        if self.directory and "directory" not in params:
-            params["directory"] = self.directory
-        if self.workspace and "workspace" not in params:
-            params["workspace"] = self.workspace
+        if self.directory and "location[directory]" not in params:
+            params["location[directory]"] = self.directory
         return params
 
     @staticmethod
@@ -219,10 +248,6 @@ class OpencodeClient:
             inner = args[0]
             if isinstance(data, list):
                 return [self._construct_type(inner, item) for item in data]
-            if isinstance(data, dict) and "data" in data:
-                inner_list = data["data"]
-                if isinstance(inner_list, list):
-                    return [self._construct_type(inner, item) for item in inner_list]
             return cast(_T, data)
         if isinstance(data, dict):
             return cast(_T, cast(Any, model_class).model_construct(**data))
@@ -231,6 +256,22 @@ class OpencodeClient:
         if data is None:
             return None
         return data
+
+    def _parse_json(self, json_data: Any, cast_to: type[_T] | None) -> Any:
+        """Unwrap the v2 ``{"data": ...}`` envelope and build response models.
+
+        Paginated responses (``{"data": [...], "cursor": {...}}``) become a
+        :class:`PageResponse`.
+        """
+        if isinstance(json_data, dict) and "data" in json_data:
+            if "cursor" in json_data:
+                return PageResponse.model_construct(
+                    data=self._construct_type(cast_to, json_data["data"]),
+                    cursor=json_data["cursor"],
+                )
+            if set(json_data) <= _ENVELOPE_KEYS:
+                json_data = json_data["data"]
+        return self._construct_type(cast_to, json_data)
 
     # ------------------------------------------------------------------
     # Request handling
@@ -248,14 +289,12 @@ class OpencodeClient:
                 ct = response.headers.get("content-type", "")
                 if "text/event-stream" in ct:
                     parsed = response
+                elif "json" in ct:
+                    parsed = self._parse_json(response.json(), cast_to)
                 elif "text/" in ct:
                     parsed = response.text
                 else:
-                    json_data = response.json()
-                    if cast_to is not None:
-                        parsed = self._construct_type(cast_to, json_data)
-                    else:
-                        parsed = json_data
+                    parsed = response.content
             if self._raw_mode:
                 return RawResponse(parsed, response)
             return parsed
@@ -310,7 +349,9 @@ class OpencodeClient:
         last_exc: httpx.TimeoutException | None = None
         for attempt in range(self._max_retries + 1):
             try:
-                response = self._client.request(method, url, params=params, json=body, headers=hdrs)
+                response = self._client.request(
+                    method, url, params=params, json=body, headers=hdrs, auth=self._auth
+                )
             except httpx.TimeoutException as exc:
                 last_exc = exc
                 if attempt < self._max_retries:
@@ -357,7 +398,11 @@ class OpencodeClient:
         request = self._client.build_request(
             method, url, params=params, json=json_body, headers=hdrs
         )
-        response = self._client.send(request, stream=True)
+        response = self._client.send(request, stream=True, auth=self._auth)
+        if not response.is_success:
+            response.read()
+            response.close()
+            self._handle(response)
         if self._raw_mode:
             return cast(httpx.Response, RawResponse(response, response))
         return response
@@ -377,17 +422,21 @@ class OpencodeClient:
         timeout: float | NotGiven = NOT_GIVEN,
         max_retries: int | NotGiven = NOT_GIVEN,
         directory: str | None | NotGiven = NOT_GIVEN,
-        workspace: str | None | NotGiven = NOT_GIVEN,
+        password: str | None | NotGiven = NOT_GIVEN,
+        username: str | NotGiven = NOT_GIVEN,
         httpx_client: httpx.Client | None | NotGiven = NOT_GIVEN,
     ) -> OpencodeClient:
         return OpencodeClient(
-            base_url=self.base_url if is_given(base_url) else cast(str, base_url),
-            timeout=self._timeout if is_given(timeout) else cast(float, timeout),
-            max_retries=self._max_retries if is_given(max_retries) else cast(int, max_retries),
-            directory=self.directory if is_given(directory) else cast(str, directory),
-            workspace=self.workspace if is_given(workspace) else cast(str, workspace),
+            base_url=cast(str, base_url) if is_given(base_url) else self.base_url,
+            timeout=cast(float, timeout) if is_given(timeout) else self._timeout,
+            max_retries=cast(int, max_retries) if is_given(max_retries) else self._max_retries,
+            directory=cast("str | None", directory) if is_given(directory) else self.directory,
+            password=cast("str | None", password) if is_given(password) else self.password,
+            username=cast(str, username) if is_given(username) else self.username,
             httpx_client=(
-                self._client if is_given(httpx_client) else cast(httpx.Client, httpx_client)
+                cast("httpx.Client | None", httpx_client)
+                if is_given(httpx_client)
+                else self._client
             ),
         )
 
@@ -395,526 +444,581 @@ class OpencodeClient:
         return self.copy(**kwargs)
 
     # ------------------------------------------------------------------
-    # Global
+    # Server
     # ------------------------------------------------------------------
 
-    def health(self) -> HealthResponse:
+    def health(self) -> ServerInfoResponse:
+        """``GET /api/info`` — server version, pid and URLs."""
         return cast(
-            HealthResponse,
-            self._request("GET", "/global/health", cast_to=HealthResponse),
+            ServerInfoResponse,
+            self._request("GET", "/api/info", cast_to=ServerInfoResponse),
         )
 
-    def global_event(self) -> httpx.Response:
-        return self._request_stream("GET", "/global/event")
-
-    def global_dispose(self) -> Any:
-        return self._request("POST", "/global/dispose")
-
-    def global_upgrade(self, target: str | None = None) -> Any:
-        return self._request("POST", "/global/upgrade", json_body={"target": target})
-
-    def global_config_get(self) -> Any:
-        return self._request("GET", "/global/config", cast_to=ConfigResponse)
-
-    def global_config_update(self, config: Any) -> Any:
-        return self._request(
-            "PATCH", "/global/config", json_body={"config": config}, cast_to=ConfigResponse
+    def location_get(self, **params: Any) -> LocationResponse:
+        return cast(
+            LocationResponse,
+            self._request("GET", "/api/location", params=params, cast_to=LocationResponse),
         )
+
+    def location_reload(self) -> None:
+        self._request("POST", "/api/location/reload")
+
+    def event_subscribe(self, **params: Any) -> httpx.Response:
+        """``GET /api/event`` — open the SSE event stream (caller must close it)."""
+        return self._request_stream("GET", "/api/event", params=params)
 
     # ------------------------------------------------------------------
     # Config
     # ------------------------------------------------------------------
 
-    def config_get(self, **kwargs: Any) -> Any:
-        return self._request("GET", "/config", params=kwargs, cast_to=ConfigResponse)
-
-    def config_update(self, config: Any, **kwargs: Any) -> Any:
-        return self._request(
-            "PATCH", "/config", json_body={"config": config}, params=kwargs, cast_to=ConfigResponse
+    def config_get(self, **params: Any) -> list[ConfigEntry]:
+        return cast(
+            "list[ConfigEntry]",
+            self._request("GET", "/api/config", params=params, cast_to=list[ConfigEntry]),
         )
 
-    def config_providers(self, **kwargs: Any) -> Any:
-        return self._request(
-            "GET", "/config/providers", params=kwargs, cast_to=ConfigProviderResponse
+    def config_shells(self) -> list[ConfigShellOption]:
+        return cast(
+            "list[ConfigShellOption]",
+            self._request("GET", "/api/config/shell", cast_to=list[ConfigShellOption]),
         )
+
+    def config_update(self, **kwargs: Any) -> Any:
+        """``PATCH /api/experimental/config`` (currently only ``shell``)."""
+        return self._request("PATCH", "/api/experimental/config", json_body=kwargs)
 
     # ------------------------------------------------------------------
     # Session
     # ------------------------------------------------------------------
 
-    def session_create(self, **kwargs: Any) -> SessionResponse:
+    def session_create(
+        self,
+        *,
+        model: str | dict[str, str] | None = None,
+        agent: str | None = None,
+        title: str | None = None,
+        parent_id: str | None = None,
+        permissions: list[dict[str, str]] | None = None,
+        metadata: dict[str, Any] | None = None,
+        directory: str | None = None,
+        **kwargs: Any,
+    ) -> SessionResponse:
+        """``POST /api/session``.
+
+        ``model`` is ``"provider/model"`` or ``{"providerID": ..., "id": ...}``.
+        ``directory`` defaults to the client's ``directory``.
+        """
+        directory = directory or self.directory
+        body = _compact(
+            model=model_ref(model),
+            agent=agent,
+            title=title,
+            parentID=parent_id,
+            permissions=permissions,
+            metadata=metadata,
+            location={"directory": directory} if directory else None,
+            **kwargs,
+        )
         return cast(
             SessionResponse,
-            self._request(
-                "POST",
-                "/session",
-                json_body=kwargs or None,
-                cast_to=SessionResponse,
-            ),
+            self._request("POST", "/api/session", json_body=body, cast_to=SessionResponse),
         )
 
     def session_get(self, session_id: str) -> SessionResponse:
         return cast(
             SessionResponse,
-            self._request("GET", f"/session/{session_id}", cast_to=SessionResponse),
+            self._request("GET", f"/api/session/{session_id}", cast_to=SessionResponse),
         )
 
-    def session_list(self, **kwargs: Any) -> Any:
-        return self._request("GET", "/session", params=kwargs)
-
-    def session_delete(self, session_id: str) -> Any:
-        return self._request("DELETE", f"/session/{session_id}")
-
-    def session_update(self, session_id: str, **kwargs: Any) -> Any:
-        return self._request("PUT", f"/session/{session_id}", json_body=kwargs or None)
-
-    def session_messages(self, session_id: str, **kwargs: Any) -> Any:
-        return self._request("GET", f"/session/{session_id}/message", params=kwargs)
-
-    def session_message(self, session_id: str, message_id: str) -> Any:
-        return self._request("GET", f"/session/{session_id}/message/{message_id}")
-
-    def session_delete_message(self, session_id: str, message_id: str, **kwargs: Any) -> Any:
-        return self._request("DELETE", f"/session/{session_id}/message/{message_id}", params=kwargs)
-
-    def session_fork(self, session_id: str, **kwargs: Any) -> Any:
-        return self._request(
-            "POST", f"/session/{session_id}/fork", json_body=kwargs or None, cast_to=SessionResponse
-        )
-
-    def session_abort(self, session_id: str) -> Any:
-        return self._request("POST", f"/session/{session_id}/abort")
-
-    def session_init(self, session_id: str, **kwargs: Any) -> Any:
-        return self._request("POST", f"/session/{session_id}/init", json_body=kwargs or None)
-
-    def session_summarize(self, session_id: str) -> Any:
-        return self._request("POST", f"/session/{session_id}/summarize")
-
-    def session_todo(self, session_id: str) -> Any:
-        return self._request("GET", f"/session/{session_id}/todo", cast_to=list[TodoResponse])
-
-    def session_children(self, session_id: str) -> Any:
-        return self._request("GET", f"/session/{session_id}/child", cast_to=list[SessionResponse])
-
-    def session_diff(self, session_id: str) -> Any:
-        return self._request(
-            "GET", f"/session/{session_id}/diff", cast_to=list[SnapshotFileDiffResponse]
-        )
-
-    def session_share(self, session_id: str) -> Any:
-        return self._request("POST", f"/session/{session_id}/share")
-
-    def session_unshare(self, session_id: str) -> Any:
-        return self._request("DELETE", f"/session/{session_id}/share")
-
-    def session_revert(self, session_id: str) -> Any:
-        return self._request("POST", f"/session/{session_id}/revert")
-
-    def session_unrevert(self, session_id: str) -> Any:
-        return self._request("POST", f"/session/{session_id}/unrevert")
-
-    def session_command(self, session_id: str, command: str, **kwargs: Any) -> Any:
-        return self._request(
-            "POST",
-            f"/session/{session_id}/command",
-            json_body={"command": command, **kwargs},
-        )
-
-    def session_shell(self, session_id: str, command: str) -> Any:
-        return self._request(
-            "POST",
-            f"/session/{session_id}/shell",
-            json_body={"command": command},
-        )
-
-    # ------------------------------------------------------------------
-    # V2 Session
-    # ------------------------------------------------------------------
-
-    def v2_session_list(self, **kwargs: Any) -> Any:
-        return self._request("GET", "/api/session", params=kwargs)
-
-    def session_send(self, session_id: str, body: Any) -> V1SessionResponse:
+    def session_list(self, **params: Any) -> PageResponse:
+        """``GET /api/session`` — params: limit, order, search, parentID, archived, ..."""
         return cast(
-            V1SessionResponse,
+            PageResponse,
+            self._request("GET", "/api/session", params=params, cast_to=list[SessionResponse]),
+        )
+
+    def session_active(self) -> Any:
+        return self._request("GET", "/api/session/active")
+
+    def session_delete(self, session_id: str) -> None:
+        self._request("DELETE", f"/api/session/{session_id}")
+
+    def session_update(self, session_id: str, **kwargs: Any) -> None:
+        """``PATCH /api/session/{id}`` — title, metadata, permissions, archived."""
+        self._request("PATCH", f"/api/session/{session_id}", json_body=kwargs)
+
+    def session_fork(self, session_id: str, *, before: str | None = None) -> SessionResponse:
+        return cast(
+            SessionResponse,
             self._request(
                 "POST",
-                f"/session/{session_id}/message",
-                json_body=body,
-                cast_to=V1SessionResponse,
+                f"/api/session/{session_id}/fork",
+                json_body=_compact(before=before),
+                cast_to=SessionResponse,
             ),
         )
 
-    def v2_session_prompt(
+    def session_switch_agent(self, session_id: str, agent: str) -> None:
+        self._request("POST", f"/api/session/{session_id}/agent", json_body={"agent": agent})
+
+    def session_switch_model(self, session_id: str, model: str | dict[str, str]) -> None:
+        self._request(
+            "POST", f"/api/session/{session_id}/model", json_body={"model": model_ref(model)}
+        )
+
+    def session_move(self, session_id: str, directory: str, **kwargs: Any) -> None:
+        self._request(
+            "POST",
+            f"/api/session/{session_id}/move",
+            json_body={"directory": directory, **kwargs},
+        )
+
+    def session_prompt(
         self,
         session_id: str,
-        prompt: Any,
+        text: str,
         *,
-        delivery: str = "queue",
+        files: list[dict[str, Any]] | None = None,
+        agents: list[dict[str, Any]] | None = None,
+        skills: list[dict[str, Any]] | None = None,
+        delivery: str | None = None,
         **kwargs: Any,
-    ) -> Any:
-        body: dict[str, Any] = {
-            "prompt": prompt,
-            "delivery": delivery,
-            **kwargs,
-        }
-        return self._request(
-            "POST", f"/api/session/{session_id}/prompt", json_body=body, cast_to=None
+    ) -> PromptResponse:
+        """``POST /api/session/{id}/prompt`` — enqueue a prompt (returns immediately).
+
+        ``delivery`` is ``"steer"`` or ``"queue"``. Use :meth:`session_wait` or
+        :meth:`event_subscribe` to wait for the assistant to finish.
+        """
+        body = _compact(
+            text=text, files=files, agents=agents, skills=skills, delivery=delivery, **kwargs
         )
-
-    def v2_session_wait(self, session_id: str) -> Any:
-        return self._request("POST", f"/api/session/{session_id}/wait")
-
-    def v2_session_context(self, session_id: str, **kwargs: Any) -> Any:
-        return self._request("GET", f"/api/session/{session_id}/context", params=kwargs)
-
-    def v2_session_messages(self, session_id: str, **kwargs: Any) -> Any:
-        return self._request("GET", f"/api/session/{session_id}/message", params=kwargs)
-
-    def v2_session_compact(self, session_id: str) -> Any:
-        return self._request("POST", f"/api/session/{session_id}/compact")
-
-    def v2_model_list(self, **kwargs: Any) -> Any:
-        return self._request("GET", "/api/model", params=kwargs, cast_to=list[ModelV2Info])
-
-    def v2_provider_list(self, **kwargs: Any) -> Any:
-        return self._request("GET", "/api/provider", params=kwargs, cast_to=list[ProviderV2Info])
-
-    def v2_provider_get(self, provider_id: str) -> Any:
-        return self._request("GET", f"/api/provider/{provider_id}", cast_to=ProviderV2Info)
-
-    # ------------------------------------------------------------------
-    # Auth
-    # ------------------------------------------------------------------
-
-    def auth_set(self, provider_id: str, auth: Any) -> Any:
-        return self._request("PUT", f"/auth/{provider_id}", json_body={"auth": auth})
-
-    def auth_remove(self, provider_id: str) -> Any:
-        return self._request("DELETE", f"/auth/{provider_id}")
-
-    # ------------------------------------------------------------------
-    # App
-    # ------------------------------------------------------------------
-
-    def app_log(self, **kwargs: Any) -> Any:
-        return self._request("POST", "/log", json_body=kwargs or None)
-
-    def app_agents(self, **kwargs: Any) -> Any:
-        return self._request("GET", "/agent", params=kwargs, cast_to=list[AgentResponse])
-
-    # ------------------------------------------------------------------
-    # File
-    # ------------------------------------------------------------------
-
-    def file_read(self, path: str, **kwargs: Any) -> FileContentResponse:
         return cast(
-            FileContentResponse,
+            PromptResponse,
             self._request(
-                "GET",
-                "/file/content",
-                params={"path": path, **kwargs},
-                cast_to=FileContentResponse,
+                "POST",
+                f"/api/session/{session_id}/prompt",
+                json_body=body,
+                cast_to=PromptResponse,
             ),
         )
 
-    def file_list(self, path: str, **kwargs: Any) -> Any:
-        return self._request(
-            "GET", "/file", params={"path": path, **kwargs}, cast_to=list[FileNode]
+    def session_wait(self, session_id: str) -> None:
+        """``POST /api/experimental/session/{id}/wait`` — block until the session is idle."""
+        self._request("POST", f"/api/experimental/session/{session_id}/wait")
+
+    def session_command(self, session_id: str, name: str, text: str = "", **kwargs: Any) -> None:
+        self._request(
+            "POST",
+            f"/api/session/{session_id}/command",
+            json_body={"name": name, "text": text, **kwargs},
         )
 
-    def file_status(self, **kwargs: Any) -> Any:
-        return self._request("GET", "/file/status", params=kwargs, cast_to=list[FileStatus])
+    def session_shell(self, session_id: str, command: str) -> None:
+        self._request("POST", f"/api/session/{session_id}/shell", json_body={"command": command})
+
+    def session_synthetic(self, session_id: str, text: str, **kwargs: Any) -> Any:
+        return self._request(
+            "POST",
+            f"/api/session/{session_id}/synthetic",
+            json_body={"text": text, **kwargs},
+        )
+
+    def session_compact(self, session_id: str, **kwargs: Any) -> Any:
+        return self._request("POST", f"/api/session/{session_id}/compact", json_body=kwargs)
+
+    def session_context(self, session_id: str) -> list[dict[str, Any]]:
+        """``GET /api/session/{id}/context`` — messages in chronological order."""
+        return cast(
+            "list[dict[str, Any]]",
+            self._request("GET", f"/api/session/{session_id}/context"),
+        )
+
+    def session_messages(self, session_id: str, **params: Any) -> PageResponse:
+        """``GET /api/session/{id}/message`` — params: limit, order, cursor, type."""
+        return cast(
+            PageResponse,
+            self._request("GET", f"/api/session/{session_id}/message", params=params),
+        )
+
+    def session_message(self, session_id: str, message_id: str) -> dict[str, Any]:
+        return cast(
+            "dict[str, Any]",
+            self._request("GET", f"/api/session/{session_id}/message/{message_id}"),
+        )
+
+    def session_diff(self, session_id: str) -> list[FileDiffResponse]:
+        return cast(
+            "list[FileDiffResponse]",
+            self._request("GET", f"/api/session/{session_id}/diff", cast_to=list[FileDiffResponse]),
+        )
+
+    def session_interrupt(self, session_id: str, *, resume: bool | None = None) -> Any:
+        return self._request(
+            "POST",
+            f"/api/session/{session_id}/interrupt",
+            params=_compact(resume=None if resume is None else str(resume).lower()),
+        )
+
+    def session_background(self, session_id: str) -> None:
+        self._request("POST", f"/api/session/{session_id}/background")
+
+    def session_generate(self, session_id: str, prompt: str) -> Any:
+        return self._request(
+            "POST", f"/api/session/{session_id}/generate", json_body={"prompt": prompt}
+        )
+
+    def session_revert_stage(self, session_id: str, message_id: str, **kwargs: Any) -> Any:
+        return self._request(
+            "POST",
+            f"/api/session/{session_id}/revert/stage",
+            json_body={"messageID": message_id, **kwargs},
+        )
+
+    def session_revert_commit(self, session_id: str) -> None:
+        self._request("POST", f"/api/session/{session_id}/revert/commit")
+
+    def session_revert_clear(self, session_id: str) -> None:
+        self._request("DELETE", f"/api/session/{session_id}/revert")
+
+    def session_inbox(self, session_id: str) -> list[dict[str, Any]]:
+        return cast(
+            "list[dict[str, Any]]",
+            self._request("GET", f"/api/session/{session_id}/inbox"),
+        )
+
+    def session_permissions(self, session_id: str) -> list[PermissionRequestResponse]:
+        """``GET /api/session/{id}/permission`` — pending permission requests."""
+        return cast(
+            "list[PermissionRequestResponse]",
+            self._request(
+                "GET",
+                f"/api/session/{session_id}/permission",
+                cast_to=list[PermissionRequestResponse],
+            ),
+        )
+
+    def session_permission_reply(
+        self,
+        session_id: str,
+        request_id: str,
+        decision: str,
+        *,
+        message: str | None = None,
+    ) -> None:
+        """Reply to a permission request; ``decision`` is ``once``, ``always`` or ``reject``."""
+        self._request(
+            "POST",
+            f"/api/session/{session_id}/permission/{request_id}/reply",
+            json_body=_compact(decision=decision, message=message),
+        )
+
+    def session_forms(self, session_id: str) -> list[FormResponse]:
+        return cast(
+            "list[FormResponse]",
+            self._request("GET", f"/api/session/{session_id}/form", cast_to=list[FormResponse]),
+        )
+
+    def session_form_reply(self, session_id: str, form_id: str, answer: dict[str, Any]) -> None:
+        self._request(
+            "POST",
+            f"/api/session/{session_id}/form/{form_id}/reply",
+            json_body={"answer": answer},
+        )
+
+    def session_form_cancel(self, session_id: str, form_id: str) -> None:
+        self._request("DELETE", f"/api/session/{session_id}/form/{form_id}")
 
     # ------------------------------------------------------------------
-    # Find
+    # Models, providers, agents
     # ------------------------------------------------------------------
 
-    def find_text(self, pattern: str, **kwargs: Any) -> Any:
-        return self._request(
-            "GET", "/find", params={"pattern": pattern, **kwargs}, cast_to=list[FindMatch]
+    def model_list(self, **params: Any) -> list[ModelV2Info]:
+        return cast(
+            "list[ModelV2Info]",
+            self._request("GET", "/api/model", params=params, cast_to=list[ModelV2Info]),
         )
 
-    def find_files(self, query: str, **kwargs: Any) -> Any:
-        return self._request(
-            "GET", "/find/file", params={"query": query, **kwargs}, cast_to=list[str]
+    def model_default(self) -> ModelV2Info | None:
+        return cast(
+            "ModelV2Info | None",
+            self._request("GET", "/api/model/default", cast_to=ModelV2Info),
         )
 
-    def find_symbols(self, query: str, **kwargs: Any) -> Any:
-        return self._request(
-            "GET", "/find/symbol", params={"query": query, **kwargs}, cast_to=list[Symbol]
+    def provider_list(self, **params: Any) -> list[ProviderV2Info]:
+        return cast(
+            "list[ProviderV2Info]",
+            self._request("GET", "/api/provider", params=params, cast_to=list[ProviderV2Info]),
+        )
+
+    def provider_get(self, provider_id: str) -> ProviderV2Info:
+        return cast(
+            ProviderV2Info,
+            self._request("GET", f"/api/provider/{provider_id}", cast_to=ProviderV2Info),
+        )
+
+    def agent_list(self) -> list[AgentResponse]:
+        return cast(
+            "list[AgentResponse]",
+            self._request("GET", "/api/agent", cast_to=list[AgentResponse]),
+        )
+
+    def agent_get(self, agent_id: str) -> AgentResponse:
+        return cast(
+            AgentResponse,
+            self._request("GET", f"/api/agent/{agent_id}", cast_to=AgentResponse),
+        )
+
+    def command_list(self) -> list[CommandResponse]:
+        return cast(
+            "list[CommandResponse]",
+            self._request("GET", "/api/command", cast_to=list[CommandResponse]),
+        )
+
+    def skill_list(self) -> list[SkillResponse]:
+        return cast(
+            "list[SkillResponse]",
+            self._request("GET", "/api/skill", cast_to=list[SkillResponse]),
+        )
+
+    # ------------------------------------------------------------------
+    # Integrations & credentials
+    # ------------------------------------------------------------------
+
+    def integration_list(self) -> list[IntegrationResponse]:
+        return cast(
+            "list[IntegrationResponse]",
+            self._request("GET", "/api/integration", cast_to=list[IntegrationResponse]),
+        )
+
+    def integration_get(self, integration_id: str) -> IntegrationResponse:
+        return cast(
+            IntegrationResponse,
+            self._request("GET", f"/api/integration/{integration_id}", cast_to=IntegrationResponse),
+        )
+
+    def integration_connect_key(self, integration_id: str, **kwargs: Any) -> None:
+        self._request("POST", f"/api/integration/{integration_id}/connect/key", json_body=kwargs)
+
+    def credential_list(self) -> list[CredentialResponse]:
+        return cast(
+            "list[CredentialResponse]",
+            self._request("GET", "/api/credential", cast_to=list[CredentialResponse]),
+        )
+
+    def credential_create(
+        self, integration_id: str, value: Any, **kwargs: Any
+    ) -> CredentialResponse:
+        return cast(
+            CredentialResponse,
+            self._request(
+                "POST",
+                "/api/credential",
+                json_body={"integrationID": integration_id, "value": value, **kwargs},
+                cast_to=CredentialResponse,
+            ),
+        )
+
+    def credential_update(self, credential_id: str, label: str) -> None:
+        self._request("PATCH", f"/api/credential/{credential_id}", json_body={"label": label})
+
+    def credential_remove(self, credential_id: str) -> None:
+        self._request("DELETE", f"/api/credential/{credential_id}")
+
+    def credential_activate(self, credential_id: str) -> None:
+        self._request("POST", f"/api/credential/{credential_id}/activate")
+
+    # ------------------------------------------------------------------
+    # MCP
+    # ------------------------------------------------------------------
+
+    def mcp_list(self) -> list[MCPServerResponse]:
+        return cast(
+            "list[MCPServerResponse]",
+            self._request("GET", "/api/mcp", cast_to=list[MCPServerResponse]),
+        )
+
+    def mcp_add(self, server: str, config: Any) -> Any:
+        return self._request("PUT", f"/api/experimental/mcp/{server}", json_body={"config": config})
+
+    def mcp_remove(self, server: str) -> Any:
+        return self._request("DELETE", f"/api/experimental/mcp/{server}")
+
+    def mcp_connect(self, server: str) -> Any:
+        return self._request("POST", f"/api/experimental/mcp/{server}/connect")
+
+    def mcp_disconnect(self, server: str) -> Any:
+        return self._request("POST", f"/api/experimental/mcp/{server}/disconnect")
+
+    # ------------------------------------------------------------------
+    # Permissions & forms (all sessions)
+    # ------------------------------------------------------------------
+
+    def permission_list(self) -> list[PermissionRequestResponse]:
+        return cast(
+            "list[PermissionRequestResponse]",
+            self._request(
+                "GET", "/api/permission/request", cast_to=list[PermissionRequestResponse]
+            ),
+        )
+
+    def permission_saved_list(self) -> list[dict[str, Any]]:
+        return cast("list[dict[str, Any]]", self._request("GET", "/api/permission/saved"))
+
+    def permission_saved_remove(self, permission_id: str) -> None:
+        self._request("DELETE", f"/api/permission/saved/{permission_id}")
+
+    def form_list(self) -> list[FormResponse]:
+        return cast(
+            "list[FormResponse]",
+            self._request("GET", "/api/form", cast_to=list[FormResponse]),
+        )
+
+    # ------------------------------------------------------------------
+    # Filesystem
+    # ------------------------------------------------------------------
+
+    def fs_read(self, path: str) -> str | bytes:
+        """``GET /api/fs/read/{path}`` — text files return ``str``, others ``bytes``."""
+        return cast("str | bytes", self._request("GET", f"/api/fs/read/{path.lstrip('/')}"))
+
+    def fs_list(self, path: str | None = None) -> list[FileSystemEntry]:
+        return cast(
+            "list[FileSystemEntry]",
+            self._request(
+                "GET", "/api/fs/list", params=_compact(path=path), cast_to=list[FileSystemEntry]
+            ),
+        )
+
+    def fs_find(
+        self, query: str, *, type: str | None = None, limit: int | None = None
+    ) -> list[FileSystemEntry]:
+        return cast(
+            "list[FileSystemEntry]",
+            self._request(
+                "GET",
+                "/api/fs/find",
+                params=_compact(query=query, type=type, limit=limit),
+                cast_to=list[FileSystemEntry],
+            ),
         )
 
     # ------------------------------------------------------------------
     # VCS
     # ------------------------------------------------------------------
 
-    def vcs_get(self, **kwargs: Any) -> Any:
-        return self._request("GET", "/vcs", params=kwargs, cast_to=VcsInfo)
+    def vcs_get(self) -> VcsInfo:
+        return cast(VcsInfo, self._request("GET", "/api/vcs", cast_to=VcsInfo))
 
-    def vcs_status(self, **kwargs: Any) -> Any:
-        return self._request("GET", "/vcs/status", params=kwargs, cast_to=list[VcsFileStatus])
+    def vcs_base(self) -> Any:
+        return self._request("GET", "/api/vcs/base")
 
-    def vcs_diff(self, mode: str = "git", **kwargs: Any) -> Any:
-        return self._request(
-            "GET", "/vcs/diff", params={"mode": mode, **kwargs}, cast_to=list[VcsFileDiff]
+    def vcs_status(self) -> list[VcsFileStatus]:
+        return cast(
+            "list[VcsFileStatus]",
+            self._request("GET", "/api/vcs/status", cast_to=list[VcsFileStatus]),
         )
 
-    def vcs_diff_raw(self, **kwargs: Any) -> Any:
-        return self._request("GET", "/vcs/diff/raw", params=kwargs)
+    def vcs_branches(self) -> VcsBranchList:
+        return cast(VcsBranchList, self._request("GET", "/api/vcs/branch", cast_to=VcsBranchList))
 
-    def vcs_apply(self, patch: str, **kwargs: Any) -> Any:
-        return self._request("POST", "/vcs/apply", json_body={"patch": patch, **kwargs})
-
-    # ------------------------------------------------------------------
-    # LSP / Formatter
-    # ------------------------------------------------------------------
-
-    def lsp_status(self, **kwargs: Any) -> Any:
-        return self._request("GET", "/lsp", params=kwargs, cast_to=list[LSPStatusResponse])
-
-    def formatter_status(self, **kwargs: Any) -> Any:
-        return self._request(
-            "GET", "/formatter", params=kwargs, cast_to=list[FormatterStatusResponse]
+    def vcs_diff(self, **params: Any) -> list[FileDiffResponse]:
+        return cast(
+            "list[FileDiffResponse]",
+            self._request("GET", "/api/vcs/diff", params=params, cast_to=list[FileDiffResponse]),
         )
 
+    def vcs_init(self) -> None:
+        self._request("POST", "/api/vcs/init")
+
     # ------------------------------------------------------------------
-    # Provider
+    # Projects & worktrees
     # ------------------------------------------------------------------
 
-    def provider_list(self, **kwargs: Any) -> Any:
-        return self._request("GET", "/provider", params=kwargs, cast_to=ProviderResponse)
-
-    def provider_auth(self, provider_id: str, **kwargs: Any) -> Any:
-        return self._request(
-            "GET", f"/provider/{provider_id}/auth", params=kwargs, cast_to=ProviderAuthListResponse
+    def project_list(self) -> list[ProjectResponse]:
+        return cast(
+            "list[ProjectResponse]",
+            self._request("GET", "/api/project", cast_to=list[ProjectResponse]),
         )
 
-    # ------------------------------------------------------------------
-    # MCP
-    # ------------------------------------------------------------------
+    def project_update(self, project_id: str, **kwargs: Any) -> Any:
+        return self._request("PATCH", f"/api/project/{project_id}", json_body=kwargs)
 
-    def mcp_list(self, **kwargs: Any) -> Any:
-        return self._request("GET", "/mcp", params=kwargs, cast_to=MCPStatusResponse)
-
-    def mcp_status(self, **kwargs: Any) -> Any:
-        return self._request("GET", "/mcp/status", params=kwargs, cast_to=MCPStatusResponse)
-
-    def mcp_add(self, config: Any) -> Any:
-        return self._request("PUT", "/mcp", json_body={"config": config}, cast_to=MCPStatusResponse)
-
-    def mcp_connect(self, name: str, **kwargs: Any) -> Any:
-        return self._request("POST", f"/mcp/{name}/connect", json_body=kwargs or None)
-
-    def mcp_disconnect(self, name: str) -> Any:
-        return self._request("DELETE", f"/mcp/{name}/connect")
-
-    # ------------------------------------------------------------------
-    # Tool
-    # ------------------------------------------------------------------
-
-    def tool_list(self, **kwargs: Any) -> Any:
-        return self._request("GET", "/experimental/tool", params=kwargs, cast_to=ToolList)
-
-    def tool_ids(self, **kwargs: Any) -> Any:
-        return self._request("GET", "/experimental/tool/ids", params=kwargs, cast_to=ToolIDs)
-
-    # ------------------------------------------------------------------
-    # Permission
-    # ------------------------------------------------------------------
-
-    def permission_list(self, **kwargs: Any) -> Any:
-        return self._request(
-            "GET", "/permission", params=kwargs, cast_to=list[PermissionRequestResponse]
+    def worktree_list(self, project_id: str) -> list[WorktreeResponse]:
+        return cast(
+            "list[WorktreeResponse]",
+            self._request(
+                "GET",
+                "/api/worktree",
+                params={"projectID": project_id},
+                cast_to=list[WorktreeResponse],
+            ),
         )
 
-    def permission_reply(self, permission_id: str, **kwargs: Any) -> Any:
-        return self._request("POST", f"/permission/{permission_id}", json_body=kwargs or None)
+    def worktree_create(self, project_id: str, **kwargs: Any) -> Any:
+        return self._request("POST", "/api/worktree", json_body={"projectID": project_id, **kwargs})
 
-    # ------------------------------------------------------------------
-    # Question
-    # ------------------------------------------------------------------
-
-    def question_list(self, **kwargs: Any) -> Any:
-        return self._request(
-            "GET", "/question", params=kwargs, cast_to=list[QuestionRequestResponse]
+    def worktree_remove(self, project_id: str, directory: str, *, force: bool = False) -> None:
+        self._request(
+            "DELETE",
+            "/api/worktree",
+            json_body={"projectID": project_id, "directory": directory, "force": force},
         )
 
-    def question_reply(self, question_id: str, answer: Any) -> Any:
-        return self._request("POST", f"/question/{question_id}", json_body={"answer": answer})
-
-    def question_reject(self, question_id: str) -> Any:
-        return self._request("DELETE", f"/question/{question_id}")
+    def worktree_refresh(self) -> None:
+        self._request("POST", "/api/worktree/refresh")
 
     # ------------------------------------------------------------------
-    # Event (SSE)
+    # PTY & shell processes
     # ------------------------------------------------------------------
 
-    def event_subscribe(self, **kwargs: Any) -> httpx.Response:
-        return self._request_stream("GET", "/event", params=kwargs)
-
-    # ------------------------------------------------------------------
-    # PTY
-    # ------------------------------------------------------------------
-
-    def pty_list(self, **kwargs: Any) -> Any:
-        return self._request("GET", "/pty", params=kwargs, cast_to=list[PtyResponse])
-
-    def pty_create(self, **kwargs: Any) -> Any:
-        return self._request("POST", "/pty", json_body=kwargs or None, cast_to=PtyResponse)
-
-    def pty_get(self, pty_id: str) -> Any:
-        return self._request("GET", f"/pty/{pty_id}", cast_to=PtyResponse)
-
-    def pty_remove(self, pty_id: str) -> Any:
-        return self._request("DELETE", f"/pty/{pty_id}")
-
-    def pty_update(self, pty_id: str, **kwargs: Any) -> Any:
-        return self._request(
-            "PATCH", f"/pty/{pty_id}", json_body=kwargs or None, cast_to=PtyResponse
+    def pty_list(self) -> list[PtyResponse]:
+        return cast(
+            "list[PtyResponse]", self._request("GET", "/api/pty", cast_to=list[PtyResponse])
         )
 
-    def pty_shells(self, **kwargs: Any) -> Any:
-        return self._request("GET", "/pty/shells", params=kwargs, cast_to=list[PtyShell])
-
-    # ------------------------------------------------------------------
-    # Path
-    # ------------------------------------------------------------------
-
-    def path_get(self, **kwargs: Any) -> Any:
-        return self._request("GET", "/path", params=kwargs, cast_to=PathResponse)
-
-    # ------------------------------------------------------------------
-    # Instance
-    # ------------------------------------------------------------------
-
-    def instance_dispose(self, **kwargs: Any) -> Any:
-        return self._request("POST", "/instance/dispose", params=kwargs)
-
-    # ------------------------------------------------------------------
-    # Command
-    # ------------------------------------------------------------------
-
-    def command_list(self, **kwargs: Any) -> Any:
-        return self._request("GET", "/command", params=kwargs, cast_to=list[CommandResponse])
-
-    # ------------------------------------------------------------------
-    # Project
-    # ------------------------------------------------------------------
-
-    def project_current(self, **kwargs: Any) -> Any:
-        return self._request("GET", "/project/current", params=kwargs, cast_to=ProjectResponse)
-
-    def project_list(self, **kwargs: Any) -> Any:
-        return self._request("GET", "/project", params=kwargs, cast_to=list[ProjectResponse])
-
-    def project_update(self, **kwargs: Any) -> Any:
-        return self._request("PATCH", "/project", json_body=kwargs or None, cast_to=ProjectResponse)
-
-    def project_init_git(self, **kwargs: Any) -> Any:
-        return self._request(
-            "POST", "/project/init-git", json_body=kwargs or None, cast_to=ProjectResponse
+    def pty_create(self, **kwargs: Any) -> PtyResponse:
+        return cast(
+            PtyResponse, self._request("POST", "/api/pty", json_body=kwargs, cast_to=PtyResponse)
         )
 
-    # ------------------------------------------------------------------
-    # Worktree (experimental)
-    # ------------------------------------------------------------------
+    def pty_get(self, pty_id: str) -> PtyResponse:
+        return cast(PtyResponse, self._request("GET", f"/api/pty/{pty_id}", cast_to=PtyResponse))
 
-    def worktree_list(self, **kwargs: Any) -> Any:
-        return self._request("GET", "/experimental/worktree", params=kwargs, cast_to=list[str])
-
-    def worktree_create(self, **kwargs: Any) -> Any:
-        return self._request(
-            "POST", "/experimental/worktree", json_body=kwargs or None, cast_to=WorktreeResponse
+    def pty_update(self, pty_id: str, **kwargs: Any) -> PtyResponse:
+        return cast(
+            PtyResponse,
+            self._request("PUT", f"/api/pty/{pty_id}", json_body=kwargs, cast_to=PtyResponse),
         )
 
-    def worktree_remove(self, **kwargs: Any) -> Any:
-        return self._request("DELETE", "/experimental/worktree", params=kwargs)
+    def pty_remove(self, pty_id: str) -> None:
+        self._request("DELETE", f"/api/pty/{pty_id}")
 
-    def worktree_reset(self, **kwargs: Any) -> Any:
-        return self._request("POST", "/experimental/worktree/reset", json_body=kwargs or None)
-
-    # ------------------------------------------------------------------
-    # Workspace (experimental)
-    # ------------------------------------------------------------------
-
-    def workspace_list(self, **kwargs: Any) -> Any:
-        return self._request(
-            "GET", "/experimental/workspace", params=kwargs, cast_to=list[WorkspaceResponse]
+    def shell_list(self) -> list[ShellResponse]:
+        return cast(
+            "list[ShellResponse]", self._request("GET", "/api/shell", cast_to=list[ShellResponse])
         )
 
-    def workspace_create(self, **kwargs: Any) -> Any:
-        return self._request(
-            "POST", "/experimental/workspace", json_body=kwargs or None, cast_to=WorkspaceResponse
+    def shell_create(self, command: str, **kwargs: Any) -> ShellResponse:
+        return cast(
+            ShellResponse,
+            self._request(
+                "POST",
+                "/api/shell",
+                json_body={"command": command, **kwargs},
+                cast_to=ShellResponse,
+            ),
         )
 
-    def workspace_status(self, **kwargs: Any) -> Any:
-        return self._request("GET", "/experimental/workspace/status", params=kwargs)
-
-    def workspace_remove(self, workspace_id: str) -> Any:
-        return self._request(
-            "DELETE", f"/experimental/workspace/{workspace_id}", cast_to=WorkspaceResponse
+    def shell_get(self, shell_id: str) -> ShellResponse:
+        return cast(
+            ShellResponse, self._request("GET", f"/api/shell/{shell_id}", cast_to=ShellResponse)
         )
 
-    def workspace_warp(self, **kwargs: Any) -> Any:
-        return self._request("POST", "/experimental/workspace/warp", json_body=kwargs or None)
+    def shell_output(self, shell_id: str) -> Any:
+        return self._request("GET", f"/api/shell/{shell_id}/output")
 
-    # ------------------------------------------------------------------
-    # Sync (experimental)
-    # ------------------------------------------------------------------
-
-    def sync_start(self, **kwargs: Any) -> Any:
-        return self._request("POST", "/experimental/sync/start", json_body=kwargs or None)
-
-    def sync_steal(self, **kwargs: Any) -> Any:
-        return self._request("POST", "/experimental/sync/steal", json_body=kwargs or None)
-
-    def sync_replay(self, session_id: str) -> Any:
-        return self._request("POST", f"/experimental/sync/replay/{session_id}")
-
-    def sync_history(self, session_id: str) -> Any:
-        return self._request("GET", f"/experimental/sync/history/{session_id}")
-
-    # ------------------------------------------------------------------
-    # TUI
-    # ------------------------------------------------------------------
-
-    def tui_submit_prompt(self, **kwargs: Any) -> Any:
-        return self._request("POST", "/tui/submit", json_body=kwargs or None)
-
-    def tui_append_prompt(self, **kwargs: Any) -> Any:
-        return self._request("POST", "/tui/append", json_body=kwargs or None)
-
-    def tui_clear_prompt(self) -> Any:
-        return self._request("POST", "/tui/clear")
-
-    def tui_execute_command(self, **kwargs: Any) -> Any:
-        return self._request("POST", "/tui/command", json_body=kwargs or None)
-
-    def tui_show_toast(self, **kwargs: Any) -> Any:
-        return self._request("POST", "/tui/toast", json_body=kwargs or None)
-
-    def tui_open_sessions(self) -> Any:
-        return self._request("POST", "/tui/sessions")
-
-    def tui_open_models(self) -> Any:
-        return self._request("POST", "/tui/models")
-
-    def tui_open_themes(self) -> Any:
-        return self._request("POST", "/tui/themes")
-
-    def tui_open_help(self) -> Any:
-        return self._request("POST", "/tui/help")
-
-    def tui_publish(self, **kwargs: Any) -> Any:
-        return self._request("POST", "/tui/publish", json_body=kwargs or None)
-
-    def tui_control_response(self, **kwargs: Any) -> Any:
-        return self._request("POST", "/tui/control/response", json_body=kwargs or None)
-
-    def tui_control_next(self, session_id: str) -> Any:
-        return self._request("POST", f"/tui/control/next/{session_id}")
+    def shell_remove(self, shell_id: str) -> None:
+        self._request("DELETE", f"/api/shell/{shell_id}")
 
     # ------------------------------------------------------------------
     # Close

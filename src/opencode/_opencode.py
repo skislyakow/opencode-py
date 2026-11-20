@@ -1,15 +1,14 @@
 from __future__ import annotations
 
-import json
 import warnings
 from collections.abc import Iterator
 from typing import Any, cast
 
-from opencode._client import OpencodeClient
+from opencode._client import OpencodeClient, model_ref
 from opencode._models import SessionMessage
 from opencode._response_models import OpencodeResponse, StreamResult
 from opencode._server import OpencodeServer, create_opencode_server
-from opencode._session import Session
+from opencode._session import Session, _permission_reply, _PromptWatch
 
 _opencode_state: dict[str, Any] = {}
 
@@ -21,12 +20,7 @@ def _resolve_model(
     model_str = model
     if not model_str and config:
         model_str = config.get("model")
-    if not model_str:
-        return None
-    if "/" in model_str:
-        provider, model_id = model_str.split("/", 1)
-        return {"providerID": provider, "modelID": model_id}
-    return {"providerID": "opencode", "modelID": model_str}
+    return model_ref(model_str) if model_str else None
 
 
 class Opencode:
@@ -37,7 +31,6 @@ class Opencode:
         hostname: str = "127.0.0.1",
         port: int | None = None,
         directory: str | None = None,
-        workspace: str | None = None,
         server_timeout: float = 30.0,
         client_timeout: float = 300.0,
         config: dict[str, Any] | None = None,
@@ -47,7 +40,6 @@ class Opencode:
         self._hostname = hostname
         self._port = port
         self._directory = directory
-        self._workspace = workspace
         self._server_timeout = server_timeout
         self._client_timeout = client_timeout
         self._config = config
@@ -84,7 +76,8 @@ class Opencode:
         client = OpencodeClient(
             base_url=server.url,
             directory=self._directory,
-            workspace=self._workspace,
+            password=server.password,
+            username=server.username,
             timeout=self._client_timeout,
         )
         self._server = server
@@ -115,11 +108,10 @@ class Opencode:
     # ------------------------------------------------------------------
 
     def create_session(self, agent: str | None = None, **kwargs: Any) -> Session:
-        if agent:
-            kwargs["agent"] = agent
-        raw = self.client.session_create(**kwargs)
-        sid = raw.id
-        return Session(self.client, sid)
+        """Create a session using this instance's ``model`` unless ``model=`` is given."""
+        kwargs.setdefault("model", self._resolve_model())
+        raw = self.client.session_create(agent=agent, **kwargs)
+        return Session(self.client, raw.id or "")
 
     def _resolve_model(self) -> dict[str, str] | None:
         return _resolve_model(model=self._model, config=self._config)
@@ -133,30 +125,20 @@ class Opencode:
         agent: str | None = None,
         format: dict[str, Any] | None = None,
         wait: bool = True,
-        poll_interval: float = 0.5,
         poll_timeout: float = 600.0,
         collect: bool = False,
     ) -> str | OpencodeResponse:
         session = self.create_session(agent=agent)
         if auto_tools:
-            from opencode._tools import ToolExecutor
-
             msg = session.ask(
-                prompt,
-                files=files,
-                model=self._resolve_model(),
-                format=format,
-                tool_executor=ToolExecutor(),
-                collect=collect,
+                prompt, files=files, format=format, poll_timeout=poll_timeout, collect=collect
             )
         else:
             msg = session.prompt(
                 prompt,
                 files=files,
                 wait=wait,
-                model=self._resolve_model(),
                 format=format,
-                poll_interval=poll_interval,
                 poll_timeout=poll_timeout,
                 collect=collect,
             )
@@ -173,84 +155,40 @@ class Opencode:
         session: Session | None = None,
         collect: bool = False,
     ) -> Iterator[str]:
-        import httpx
+        """Yield assistant text deltas (``session.text.delta``) as they arrive.
 
-        from opencode._stream_events import (
-            MessagePartDeltaProps,
-            MessagePartUpdatedProps,
-            MessageUpdatedProps,
-            SessionStatusProps,
-            parse_stream_event,
-        )
-
+        Reasoning is not yielded. Permission requests are rejected. With
+        ``collect=True`` a :class:`StreamResult` exposing ``.events`` and
+        ``.text`` is returned.
+        """
         if session is None:
             session = self.create_session()
-        # Use V1 synchronous prompt — the response events arrive via /event
-        body: dict[str, Any] = {"parts": [{"type": "text", "text": prompt}]}
-        resolved = self._resolve_model()
-        if resolved:
-            body["model"] = resolved
-
-        # Subscribe before sending to catch all events
-        response = self.client.event_subscribe()
-        assert isinstance(response, httpx.Response)
-
-        # Send prompt (V1 sync)
-        self.client.session_send(session.id, body)
+        sid = session.id
+        client = self.client
+        # Subscribe before sending so no events are missed
+        stream = client.event_subscribe()
+        sent = client.session_prompt(sid, prompt, files=files)
+        watch = _PromptWatch(sid, sent.id or "", collect=False, quiet=True)
 
         def gen() -> Iterator[Any]:
-            part_types: dict[str, str] = {}
-            parts_with_deltas: set[str] = set()
-            assistant_started = False
-
-            for line in response.iter_lines():
-                if not line.startswith("data: "):
-                    continue
-                event = parse_stream_event(line[6:])
-                props = event.properties
-
-                if collect:
-                    yield ("event", event)
-
-                # Skip events for other sessions
-                sid = props.get("sessionID")
-                if sid is not None and sid != session.id:
-                    continue
-
-                if event.type == "message.updated":
-                    p_msg = MessageUpdatedProps.model_construct(**props)
-                    if p_msg.info.get("role") == "assistant":
-                        assistant_started = True
-
-                elif event.type == "message.part.updated":
-                    p_part = MessagePartUpdatedProps.model_construct(**props)
-                    part_id = p_part.part.get("id", "")
-                    part_type = p_part.part.get("type", "")
-                    if part_id and part_type:
-                        part_types[part_id] = part_type
-                    if assistant_started and part_type == "text":
-                        text = p_part.part.get("text", "")
-                        if text and part_id not in parts_with_deltas:
-                            yield text
-
-                elif event.type == "message.part.delta":
-                    p_delta = MessagePartDeltaProps.model_construct(**props)
-                    part_id = p_delta.partID
-                    part_type = part_types.get(part_id)
-                    if assistant_started and part_type == "text":
-                        delta = p_delta.delta
+            try:
+                for line in stream.iter_lines():
+                    event = watch.feed(line)
+                    if event is None:
+                        continue
+                    if collect:
+                        yield ("event", event)
+                    decision = _permission_reply(event, None)
+                    if decision is not None:
+                        client.session_permission_reply(sid, event.properties["id"], decision)
+                    elif event.type == "session.text.delta" and watch.delivered:
+                        delta = event.properties.get("delta", "")
                         if delta:
-                            parts_with_deltas.add(part_id)
                             yield delta
-
-                elif event.type in ("session.status",):
-                    p_status = SessionStatusProps.model_construct(**props)
-                    status = p_status.status
-                    if isinstance(status, dict) and status.get("type") == "idle":
+                    if watch.done:
                         break
-
-                elif event.type == "session.idle":
-                    break
+            finally:
+                stream.close()
 
         raw = gen()
         if collect:
@@ -260,9 +198,6 @@ class Opencode:
 
 def _extract_text(msg: SessionMessage) -> str:
     if isinstance(msg, dict) and msg.get("type") == "assistant":
-        structured = msg.get("structured")
-        if structured is not None:
-            return json.dumps(structured, ensure_ascii=False, default=str)
         parts: list[dict[str, Any]] = cast("list[dict[str, Any]]", msg.get("content", []))
         texts: list[str] = []
         for part in parts:
@@ -310,15 +245,10 @@ def opencode(
             elif new_cfg != state.get("config", {}):
                 warnings.warn("Ignoring new config — using existing session")
 
-    resolved = _resolve_model(model=state.get("model"), config=state.get("config", {}))
     if auto_tools:
-        from opencode._tools import ToolExecutor
-
-        msg = session.ask(
-                prompt, model=resolved, format=format, tool_executor=ToolExecutor(), collect=collect
-            )
+        msg = session.ask(prompt, format=format, collect=collect)
     else:
-        msg = session.prompt(prompt, model=resolved, format=format, collect=collect)
+        msg = session.prompt(prompt, format=format, collect=collect)
     if collect:
         assert isinstance(msg, OpencodeResponse)
         if not keep:

@@ -8,9 +8,9 @@ from typing_extensions import NotRequired
 class SessionInfo(TypedDict):
     id: str
     agent: NotRequired[str | None]
-    model: NotRequired[str | None]
+    model: NotRequired[dict[str, str] | None]
     title: NotRequired[str | None]
-    created: NotRequired[float]
+    time: NotRequired[dict[str, float]]
 
 
 class AssistantMessageText(TypedDict):
@@ -24,36 +24,17 @@ class AssistantMessageReasoning(TypedDict):
 
 
 class AssistantMessageTool(TypedDict):
+    """Tool call executed by the server; ``state`` holds input, status and output."""
+
     type: Literal["tool"]
-    tool: str
-    input: Any
-    output: NotRequired[str | None]
-
-
-class ToolCall(TypedDict):
+    id: str
     name: str
-    input: dict[str, Any]
+    executed: NotRequired[bool]
+    state: NotRequired[dict[str, Any]]
+    time: NotRequired[dict[str, float]]
 
 
-class ToolUse(TypedDict):
-    type: Literal["tool-use"]
-    toolUseID: str
-    tool: ToolCall
-
-
-class ToolResult(TypedDict):
-    type: Literal["tool-result"]
-    toolUseID: str
-    tool: ToolCall
-    output: dict[str, Any]
-
-
-AssistantContent = (
-    AssistantMessageText
-    | AssistantMessageReasoning
-    | AssistantMessageTool
-    | ToolUse
-)
+AssistantContent = AssistantMessageText | AssistantMessageReasoning | AssistantMessageTool
 
 
 class AssistantMessage(TypedDict):
@@ -62,10 +43,9 @@ class AssistantMessage(TypedDict):
     agent: NotRequired[str | None]
     model: NotRequired[dict[str, str] | None]
     content: list[AssistantContent]
-    structured: NotRequired[Any]
     finish: NotRequired[str | None]
     cost: NotRequired[float | None]
-    tokens: NotRequired[dict[str, int] | None]
+    tokens: NotRequired[dict[str, Any] | None]
     time: dict[str, float]
 
 
@@ -75,7 +55,7 @@ class UserMessage(TypedDict):
     text: str
     files: NotRequired[list[Any] | None]
     agents: NotRequired[list[Any] | None]
-    references: NotRequired[list[Any] | None]
+    skills: NotRequired[list[Any] | None]
     time: dict[str, float]
 
 
@@ -83,30 +63,13 @@ SessionMessage = AssistantMessage | UserMessage
 
 
 class PromptFileAttachment(TypedDict):
+    """File attachment for ``Session.prompt(files=[...])``."""
+
     uri: str
-    mime: NotRequired[str | None]
-    name: NotRequired[str | None]
-    description: NotRequired[str | None]
-    source: NotRequired[dict[str, Any] | None]
+    name: NotRequired[str]
+    description: NotRequired[str]
+    source: NotRequired[dict[str, Any]]
 
 
 class PromptAgentAttachment(TypedDict):
     name: str
-    source: NotRequired[dict[str, Any] | None]
-
-
-class PromptReferenceAttachment(TypedDict):
-    name: str
-    kind: NotRequired[str | None]
-    uri: NotRequired[str | None]
-    repository: NotRequired[str | None]
-    branch: NotRequired[str | None]
-    target: NotRequired[str | None]
-    targetUri: NotRequired[str | None]
-    source: NotRequired[dict[str, Any] | None]
-
-
-class OutputFormatJsonSchema(TypedDict):
-    type: Literal["json_schema"]
-    schema: dict[str, Any]
-    retryCount: NotRequired[int | None]
